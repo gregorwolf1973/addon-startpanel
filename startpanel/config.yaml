@@ -1,6 +1,6 @@
 name: "Startpanel"
 description: "Dashboard showing all Home Assistant addons with icons and quick access links"
-version: "0.10"
+version: "0.11"
 slug: "startpanel"
 init: false
 arch:

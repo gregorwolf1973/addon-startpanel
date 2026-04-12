@@ -31,14 +31,6 @@ def supervisor_get(path: str) -> dict:
         return {}
 
 
-def get_ha_urls() -> tuple[str, str]:
-    """Return (internal_url, external_url) from HA info."""
-    data = supervisor_get("/homeassistant/info")
-    result = data.get("data", {})
-    internal = result.get("internal_url") or "http://homeassistant.local:8123"
-    external = result.get("external_url") or ""
-    return internal, external
-
 
 def build_addon_list() -> tuple[list, list]:
     """Return (running_addons, stopped_addons) with all relevant fields."""
@@ -109,14 +101,7 @@ def _addon_has_icon(slug: str) -> bool:
 @app.route("/")
 def index():
     running, stopped = build_addon_list()
-    internal_url, external_url = get_ha_urls()
-    return render_template(
-        "index.html",
-        running=running,
-        stopped=stopped,
-        internal_url=internal_url.rstrip("/"),
-        external_url=external_url.rstrip("/") if external_url else "",
-    )
+    return render_template("index.html", running=running, stopped=stopped)
 
 
 @app.route("/icon/<slug>")
@@ -144,16 +129,9 @@ def icon(slug: str):
 
 @app.route("/api/refresh")
 def api_refresh():
-    """JSON endpoint for client-side refresh without full page reload."""
     _icon_cache.clear()
     running, stopped = build_addon_list()
-    internal_url, external_url = get_ha_urls()
-    return jsonify(
-        running=running,
-        stopped=stopped,
-        internal_url=internal_url.rstrip("/"),
-        external_url=external_url.rstrip("/") if external_url else "",
-    )
+    return jsonify(running=running, stopped=stopped)
 
 
 if __name__ == "__main__":

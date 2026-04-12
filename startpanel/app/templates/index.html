@@ -15,9 +15,26 @@
         <button class="toggle-btn active" data-mode="internal" onclick="setMode('internal')">Intern</button>
         <button class="toggle-btn" data-mode="external" onclick="setMode('external')">Extern</button>
       </div>
+      <button class="settings-btn" onclick="toggleSettings()" title="Einstellungen">&#9881;</button>
       <button class="refresh-btn" onclick="refreshData()" title="Aktualisieren">&#8635;</button>
     </div>
   </header>
+
+  <!-- Settings panel -->
+  <div id="settingsPanel" class="settings-panel hidden">
+    <div class="settings-row">
+      <label>Interne Basis-URL</label>
+      <input type="text" id="inputInternal" placeholder="http://192.168.178.37:8123" />
+    </div>
+    <div class="settings-row">
+      <label>Externe Basis-URL</label>
+      <input type="text" id="inputExternal" placeholder="https://meinheim.duckdns.org" />
+    </div>
+    <div class="settings-actions">
+      <button onclick="saveSettings()">Speichern</button>
+      <button class="secondary" onclick="toggleSettings()">Abbrechen</button>
+    </div>
+  </div>
 
   <main id="main">
 
@@ -32,7 +49,6 @@
         <div class="card"
              data-slug="{{ addon.slug }}"
              data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
-             data-ingress-entry="{{ addon.ingress_entry }}"
              data-ports="{{ addon.ports | tojson | e }}"
              data-state="running"
              onclick="openAddon(this)">
@@ -67,7 +83,6 @@
         <div class="card stopped"
              data-slug="{{ addon.slug }}"
              data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
-             data-ingress-entry="{{ addon.ingress_entry }}"
              data-ports="{{ addon.ports | tojson | e }}"
              data-state="stopped">
           <div class="card-icon">
@@ -98,10 +113,48 @@
   <div id="toast" class="toast hidden"></div>
 
   <script>
-    const INTERNAL_URL = {{ internal_url | tojson }};
-    const EXTERNAL_URL = {{ external_url | tojson }};
-    let currentMode = localStorage.getItem('urlMode') || 'internal';
+    // --- Persisted settings ---
+    function getSetting(key, fallback) {
+      return localStorage.getItem(key) || fallback;
+    }
 
+    let currentMode = getSetting('urlMode', 'internal');
+    // Populated by user in settings panel, persisted in localStorage
+    // Fallback: derive internal base from current window location (port 8123)
+    function getInternalBase() {
+      const saved = localStorage.getItem('internalBase');
+      if (saved) return saved.replace(/\/$/, '');
+      return `${window.location.protocol}//${window.location.hostname}:8123`;
+    }
+    function getExternalBase() {
+      const saved = localStorage.getItem('externalBase');
+      return saved ? saved.replace(/\/$/, '') : '';
+    }
+
+    // --- Settings panel ---
+    function toggleSettings() {
+      const panel = document.getElementById('settingsPanel');
+      if (panel.classList.contains('hidden')) {
+        document.getElementById('inputInternal').value = localStorage.getItem('internalBase') || '';
+        document.getElementById('inputExternal').value = localStorage.getItem('externalBase') || '';
+        panel.classList.remove('hidden');
+      } else {
+        panel.classList.add('hidden');
+      }
+    }
+
+    function saveSettings() {
+      const internal = document.getElementById('inputInternal').value.trim();
+      const external = document.getElementById('inputExternal').value.trim();
+      if (internal) localStorage.setItem('internalBase', internal);
+      else localStorage.removeItem('internalBase');
+      if (external) localStorage.setItem('externalBase', external);
+      else localStorage.removeItem('externalBase');
+      document.getElementById('settingsPanel').classList.add('hidden');
+      showToast('Gespeichert.');
+    }
+
+    // --- Mode toggle ---
     function setMode(mode) {
       currentMode = mode;
       localStorage.setItem('urlMode', mode);
@@ -110,6 +163,7 @@
       });
     }
 
+    // --- URL building ---
     function buildUrl(card) {
       const hasIngress = card.dataset.hasIngress === 'true';
       const slug = card.dataset.slug;
@@ -117,19 +171,17 @@
       try { ports = JSON.parse(card.dataset.ports); } catch(e) {}
       const firstHostPort = Object.values(ports)[0];
 
-      const internalBase = INTERNAL_URL || `${window.location.protocol}//${window.location.hostname}:8123`;
-      const externalBase = EXTERNAL_URL || internalBase;
-      const base = currentMode === 'external' ? externalBase : internalBase;
+      const internalBase = getInternalBase();
+      const externalBase = getExternalBase();
+      const base = (currentMode === 'external' && externalBase) ? externalBase : internalBase;
 
-      // Prefer direct port over ingress
+      // Direct port: use base host + port
       if (firstHostPort) {
-        const host = currentMode === 'external' && EXTERNAL_URL
-          ? new URL(EXTERNAL_URL).hostname
-          : window.location.hostname;
-        return `${window.location.protocol}//${host}:${firstHostPort}`;
+        const baseHost = (() => { try { return new URL(base).hostname; } catch(e) { return window.location.hostname; } })();
+        return `${window.location.protocol}//${baseHost}:${firstHostPort}`;
       }
 
-      // Ingress: use HA panel URL (requires HA session, works in browser)
+      // Ingress
       if (hasIngress) {
         return `${base}/hassio/ingress/${slug}`;
       }
@@ -144,7 +196,7 @@
       }
       const url = buildUrl(card);
       if (!url) {
-        showToast('Keine URL verfügbar (kein Ingress, kein Port).');
+        showToast('Keine URL verfügbar. Bitte Basis-URL in ⚙ einstellen.');
         return;
       }
       window.open(url, '_blank');
@@ -166,8 +218,13 @@
         .catch(() => { btn.classList.remove('spinning'); showToast('Fehler beim Aktualisieren.'); });
     }
 
-    // Apply saved mode on load
+    // Init
     setMode(currentMode);
+
+    // First-run hint: if no internal base saved, show settings
+    if (!localStorage.getItem('internalBase')) {
+      setTimeout(() => showToast('Bitte interne Basis-URL in ⚙ eintragen.'), 800);
+    }
   </script>
 </body>
 </html>
