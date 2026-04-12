@@ -111,11 +111,11 @@
         </div>
         <div class="modal-ref">
           <div class="ref-label">HA Adressen (Referenz)</div>
-          <div id="refInternal" class="ref-url" onclick="copyRef(this)" title="Kopieren">
+          <div id="refInternal" class="ref-url" onclick="copyRef(event)" title="Kopieren">
             <span class="ref-scheme">http://</span><span class="ref-host" id="refInternalHost"></span><span class="ref-path" id="refInternalPath"></span>
             <span class="ref-copy">&#10697;</span>
           </div>
-          <div id="refExternal" class="ref-url" onclick="copyRef(this)" title="Kopieren">
+          <div id="refExternal" class="ref-url" onclick="copyRef(event)" title="Kopieren">
             <span class="ref-scheme">https://</span><span class="ref-host" id="refExternalHost"></span><span class="ref-path" id="refExternalPath"></span>
             <span class="ref-copy">&#10697;</span>
           </div>
@@ -288,13 +288,15 @@
     }
 
     // ── Copy ref URL ─────────────────────────────────────────────
-    function copyRef(el) {
+    function copyRef(e) {
+      const el = e.currentTarget;  // always the .ref-url div, not a child span
       const url = el.dataset.fullUrl;
       if (!url) return;
       navigator.clipboard.writeText(url).then(() => {
-        const orig = el.querySelector('.ref-copy').textContent;
-        el.querySelector('.ref-copy').textContent = '✓';
-        setTimeout(() => el.querySelector('.ref-copy').textContent = orig, 1500);
+        const icon = el.querySelector('.ref-copy');
+        const orig = icon.textContent;
+        icon.textContent = '✓';
+        setTimeout(() => icon.textContent = orig, 1500);
       });
     }
 
