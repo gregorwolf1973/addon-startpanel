@@ -4,7 +4,7 @@ from flask import Flask, render_template, jsonify, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
 import requests
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)

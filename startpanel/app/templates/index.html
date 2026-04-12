@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Startpanel</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="stylesheet" href="static/style.css" />
 </head>
 <body>
 
@@ -38,7 +38,7 @@
              onclick="openAddon(this)">
           <div class="card-icon">
             {% if addon.has_icon %}
-            <img src="{{ url_for('icon', slug=addon.slug) }}" alt="{{ addon.name }}" loading="lazy"
+            <img src="icon/{{ addon.slug }}" alt="{{ addon.name }}" loading="lazy"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
             {% endif %}
             <div class="icon-fallback" {% if addon.has_icon %}style="display:none"{% endif %}>
@@ -72,7 +72,7 @@
              data-state="stopped">
           <div class="card-icon">
             {% if addon.has_icon %}
-            <img src="{{ url_for('icon', slug=addon.slug) }}" alt="{{ addon.name }}" loading="lazy"
+            <img src="icon/{{ addon.slug }}" alt="{{ addon.name }}" loading="lazy"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
             {% endif %}
             <div class="icon-fallback" {% if addon.has_icon %}style="display:none"{% endif %}>
