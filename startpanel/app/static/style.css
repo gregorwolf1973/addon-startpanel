@@ -159,6 +159,20 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
   border-style: dashed;
 }
 
+/* Drag ghost */
+.card-ghost {
+  opacity: 0.3;
+  border: 2px dashed var(--orange);
+  background: var(--surface-hover);
+}
+/* Dragged card */
+.card-chosen {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  transform: scale(1.04);
+  border-color: var(--orange);
+  z-index: 50;
+}
+
 /* Active edit card highlight */
 .card.editing {
   border-color: var(--orange);

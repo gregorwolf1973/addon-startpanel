@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Startpanel</title>
   <link rel="stylesheet" href="static/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 <body>
 
@@ -27,7 +28,7 @@
         <span class="status-dot running"></span>
         Laufend <span class="count">{{ running | length }}</span>
       </h2>
-      <div class="grid">
+      <div class="grid" id="grid-running">
         {% for addon in running %}
         <div class="card"
              data-slug="{{ addon.slug }}"
@@ -62,7 +63,7 @@
         <span class="status-dot stopped"></span>
         Installiert, nicht aktiv <span class="count">{{ stopped | length }}</span>
       </h2>
-      <div class="grid">
+      <div class="grid" id="grid-stopped">
         {% for addon in stopped %}
         <div class="card"
              data-slug="{{ addon.slug }}"
@@ -175,6 +176,7 @@
       editMode = !editMode;
       document.body.classList.toggle('edit-mode', editMode);
       document.getElementById('editBtn').classList.toggle('active', editMode);
+      setSortableEnabled(editMode);
       applyVisibility();
     }
 
@@ -312,9 +314,58 @@
       setTimeout(() => t.classList.add('hidden'), 3000);
     }
 
+    // ── Sortable ─────────────────────────────────────────────────
+    const ORDER_KEY = 'startpanel_order';
+
+    function saveOrder(gridId) {
+      const el = document.getElementById(gridId);
+      if (!el) return;
+      const order = [...el.querySelectorAll('.card')].map(c => c.dataset.slug);
+      const stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
+      stored[gridId] = order;
+      localStorage.setItem(ORDER_KEY, JSON.stringify(stored));
+    }
+
+    function applyOrder(gridId) {
+      const el = document.getElementById(gridId);
+      if (!el) return;
+      const stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
+      const order = stored[gridId];
+      if (!order) return;
+      order.forEach(slug => {
+        const card = el.querySelector(`[data-slug="${slug}"]`);
+        if (card) el.appendChild(card);
+      });
+    }
+
+    function initSortable(gridId) {
+      const el = document.getElementById(gridId);
+      if (!el) return;
+      Sortable.create(el, {
+        animation: 150,
+        ghostClass: 'card-ghost',
+        chosenClass: 'card-chosen',
+        disabled: true,          // only active in edit mode
+        onEnd: () => saveOrder(gridId),
+      });
+    }
+
+    function setSortableEnabled(enabled) {
+      ['grid-running', 'grid-stopped'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const s = Sortable.get(el);
+        if (s) s.option('disabled', !enabled);
+      });
+    }
+
     // ── Init ─────────────────────────────────────────────────────
     setMode(currentMode);
+    applyOrder('grid-running');
+    applyOrder('grid-stopped');
     applyVisibility();
+    initSortable('grid-running');
+    initSortable('grid-stopped');
   </script>
 </body>
 </html>
