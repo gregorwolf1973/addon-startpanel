@@ -10,7 +10,8 @@ app = Flask(__name__)
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
-HEADERS = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
+HEADERS = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "X-Supervisor-Token": SUPERVISOR_TOKEN}
+PORT = int(os.environ.get("PORT", 8099))
 
 # Simple in-memory icon cache
 _icon_cache: dict[str, bytes] = {}
@@ -149,4 +150,4 @@ def api_refresh():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8099, debug=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False)
