@@ -46,6 +46,23 @@ def build_addon_list() -> tuple[list, list]:
         state = a.get("state", "unknown")
         has_ingress = bool(a.get("ingress"))
 
+        # Fetch detail only for port info (mapped host ports, excluding ingress)
+        detail = supervisor_get(f"/addons/{slug}/info").get("data", {})
+        network_raw = detail.get("network") or {}
+        ingress_port = detail.get("ingress_port")
+        ports = []
+        for key, val in network_raw.items():
+            if val is None:
+                continue
+            try:
+                container_port = int(key.split("/")[0])
+                host_port = int(val)
+                if ingress_port and container_port == int(ingress_port):
+                    continue  # skip ingress port
+                ports.append(host_port)
+            except (ValueError, AttributeError):
+                pass
+
         entry = {
             "slug": slug,
             "name": a.get("name", slug),
@@ -53,6 +70,7 @@ def build_addon_list() -> tuple[list, list]:
             "state": state,
             "has_ingress": has_ingress,
             "has_icon": _addon_has_icon(slug),
+            "ports": ports,
         }
 
         if state == "started":

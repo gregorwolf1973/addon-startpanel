@@ -257,6 +257,21 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
   gap: 10px;
 }
 
+.modal-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--bg);
+  border-radius: 7px;
+  padding: 7px 10px;
+  margin-bottom: 2px;
+}
+.modal-meta code {
+  font-family: monospace;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.meta-label { font-weight: 600; }
+
 .modal-body label {
   font-size: 0.75rem;
   font-weight: 600;

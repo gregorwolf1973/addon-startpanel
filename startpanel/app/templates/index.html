@@ -32,6 +32,7 @@
         <div class="card"
              data-slug="{{ addon.slug }}"
              data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
+             data-ports="{{ addon.ports | tojson | e }}"
              data-state="running"
              onclick="cardClick(this)">
           <div class="edit-badge">&#9998;</div>
@@ -66,6 +67,7 @@
         <div class="card"
              data-slug="{{ addon.slug }}"
              data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
+             data-ports="{{ addon.ports | tojson | e }}"
              data-state="stopped"
              onclick="cardClick(this)">
           <div class="edit-badge">&#9998;</div>
@@ -100,6 +102,12 @@
         </div>
       </div>
       <div class="modal-body">
+        <div class="modal-meta">
+          <span class="meta-label">Slug:</span> <code id="modalSlugCode"></code>
+          <span id="modalPortsRow" style="display:none">
+            &nbsp;·&nbsp;<span class="meta-label">Ports:</span> <code id="modalPortsCode"></code>
+          </span>
+        </div>
         <label>Interne URL</label>
         <input id="modalInternal" type="text" placeholder="http://192.168.1.1:8080" />
         <label>Externe URL</label>
@@ -156,6 +164,7 @@
       editMode = !editMode;
       document.body.classList.toggle('edit-mode', editMode);
       document.getElementById('editBtn').classList.toggle('active', editMode);
+      applyVisibility();
     }
 
     // ── Visibility ───────────────────────────────────────────────
@@ -204,10 +213,22 @@
 
       document.getElementById('modalName').textContent = name;
       document.getElementById('modalSlug').textContent = _currentSlug;
+      document.getElementById('modalSlugCode').textContent = _currentSlug;
       document.getElementById('modalIcon').src = `icon/${_currentSlug}`;
       document.getElementById('modalInternal').value = s.internalUrl || '';
       document.getElementById('modalExternal').value = s.externalUrl || '';
       document.getElementById('modalHidden').checked = !!s.hidden;
+
+      // Ports reference
+      let ports = [];
+      try { ports = JSON.parse(card.dataset.ports || '[]'); } catch(e) {}
+      const portsRow = document.getElementById('modalPortsRow');
+      if (ports.length) {
+        document.getElementById('modalPortsCode').textContent = ports.join(', ');
+        portsRow.style.display = '';
+      } else {
+        portsRow.style.display = 'none';
+      }
 
       // Highlight active card
       document.querySelectorAll('.card').forEach(c => c.classList.remove('editing'));
