@@ -311,25 +311,19 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
   letter-spacing: 0.05em;
   margin-bottom: 2px;
 }
-.ref-url {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.ref-input {
+  width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 8px;
-  cursor: pointer;
+  padding: 7px 10px;
+  color: var(--accent);
   font-size: 0.78rem;
   font-family: monospace;
-  transition: border-color 0.15s, background 0.15s;
-  overflow: hidden;
+  cursor: text;
+  outline: none;
 }
-.ref-url:hover { border-color: var(--accent); background: var(--surface-hover); }
-.ref-scheme { color: var(--text-muted); flex-shrink: 0; }
-.ref-host { color: var(--accent); font-weight: 600; }
-.ref-path { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.ref-copy { margin-left: auto; flex-shrink: 0; color: var(--text-muted); padding-left: 8px; }
+.ref-input:focus { border-color: var(--accent); }
 
 .modal-meta {
   font-size: 0.78rem;

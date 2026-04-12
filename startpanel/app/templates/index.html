@@ -117,15 +117,9 @@
           </span>
         </div>
         <div class="modal-ref">
-          <div class="ref-label">HA Ingress-Adressen (Klick kopiert)</div>
-          <div class="ref-url" onclick="copyUrl('internal')" title="Kopieren">
-            <span id="refInternalText" class="ref-text"></span>
-            <span id="refInternalCopy" class="ref-copy">&#10697;</span>
-          </div>
-          <div id="refExternal" class="ref-url" onclick="copyUrl('external')" title="Kopieren">
-            <span id="refExternalText" class="ref-text"></span>
-            <span id="refExternalCopy" class="ref-copy">&#10697;</span>
-          </div>
+          <div class="ref-label">HA Ingress-Adressen (anklicken zum markieren)</div>
+          <input id="refInternalInput" class="ref-input" type="text" readonly onclick="this.select()" />
+          <input id="refExternalInput" class="ref-input" type="text" readonly onclick="this.select()" />
         </div>
         <label>Interne Basis-URL</label>
         <input id="modalInternalBase" type="text" placeholder="http://192.168.178.37:8123" />
@@ -256,7 +250,6 @@
 
     // ── Modal ────────────────────────────────────────────────────
     var _currentSlug = null;
-    var _refUrls = { internal: '', external: '' };
 
     function openModal(card) {
       _currentSlug = card.dataset.slug;
@@ -289,13 +282,14 @@
       var externalBase = (getGlobal('externalBase', '') || '').replace(/\/$/, '');
       var ingressPath = '/hassio/ingress/' + _currentSlug;
 
-      _refUrls.internal = internalBase + ingressPath;
-      _refUrls.external = externalBase ? externalBase + ingressPath : '';
-
-      document.getElementById('refInternalText').textContent = _refUrls.internal;
-      document.getElementById('refExternalText').textContent = _refUrls.external || '(keine externe Basis-URL)';
-      document.getElementById('refExternal').style.opacity = _refUrls.external ? '1' : '0.4';
-      document.getElementById('refExternal').style.pointerEvents = _refUrls.external ? '' : 'none';
+      document.getElementById('refInternalInput').value = internalBase + ingressPath;
+      var extInput = document.getElementById('refExternalInput');
+      if (externalBase) {
+        extInput.value = externalBase + ingressPath;
+        extInput.style.display = '';
+      } else {
+        extInput.style.display = 'none';
+      }
 
       // Highlight
       document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
@@ -336,40 +330,6 @@
       applyVisibility();
       showToast('Gespeichert.');
       _currentSlug = null;
-    }
-
-    // ── Copy ref URL ─────────────────────────────────────────────
-    function copyUrl(which) {
-      var url = _refUrls[which];
-      if (!url) return;
-      var iconEl = document.getElementById(which === 'internal' ? 'refInternalCopy' : 'refExternalCopy');
-
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url).then(function() {
-          flashCopy(iconEl, url);
-        }).catch(function() {
-          fallbackCopy(url, iconEl);
-        });
-      } else {
-        fallbackCopy(url, iconEl);
-      }
-    }
-    function fallbackCopy(url, iconEl) {
-      var ta = document.createElement('textarea');
-      ta.value = url;
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      flashCopy(iconEl, url);
-    }
-    function flashCopy(iconEl, url) {
-      var orig = iconEl.textContent;
-      iconEl.textContent = '\u2713';
-      setTimeout(function() { iconEl.textContent = orig; }, 1500);
-      showToast('Kopiert: ' + url);
     }
 
     // ── Refresh ──────────────────────────────────────────────────
