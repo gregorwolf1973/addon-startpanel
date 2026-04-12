@@ -1,17 +1,21 @@
 import os
 import logging
 from flask import Flask, render_template, jsonify, Response
+from werkzeug.middleware.proxy_fix import ProxyFix
 import requests
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_prefix=1)
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
-HEADERS = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "X-Supervisor-Token": SUPERVISOR_TOKEN}
-PORT = int(os.environ.get("PORT", 8099))
+HEADERS = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
+PORT = 8099
+
+log.info("=== Startpanel booting, SUPERVISOR_TOKEN present: %s ===", bool(SUPERVISOR_TOKEN))
 
 # Simple in-memory icon cache
 _icon_cache: dict[str, bytes] = {}
@@ -150,4 +154,5 @@ def api_refresh():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    log.info("Flask starting on port %s", PORT)
+    app.run(host="0.0.0.0", port=PORT, debug=True, use_reloader=False)
