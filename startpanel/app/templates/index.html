@@ -6,6 +6,13 @@
   <title>Startpanel</title>
   <link rel="stylesheet" href="static/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script>
+    // Apply theme before render to prevent flash
+    (function() {
+      var t = localStorage.getItem('theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
 </head>
 <body>
 
@@ -18,6 +25,7 @@
       </div>
       <button id="editBtn" class="icon-btn" onclick="toggleEditMode()" title="Bearbeiten">&#9998;</button>
       <button class="icon-btn" onclick="toggleGlobalSettings()" title="Einstellungen">&#9881;</button>
+      <button id="themeBtn" class="icon-btn" onclick="toggleTheme()" title="Theme">&#9790;</button>
       <button class="icon-btn" onclick="refreshData()" title="Aktualisieren">&#8635;</button>
     </div>
   </header>
@@ -127,14 +135,14 @@
           </span>
         </div>
         <div class="modal-ref">
-          <div class="ref-label">HA Adressen (Referenz)</div>
-          <div id="refInternal" class="ref-url" onclick="copyRef(event)" title="Kopieren">
-            <span class="ref-scheme">http://</span><span class="ref-host" id="refInternalHost"></span><span class="ref-path" id="refInternalPath"></span>
-            <span class="ref-copy">&#10697;</span>
+          <div class="ref-label">HA Adressen (Referenz) — Klick kopiert</div>
+          <div id="refInternal" class="ref-url" onclick="copyUrl('internal')" title="Kopieren">
+            <span id="refInternalText" class="ref-text"></span>
+            <span id="refInternalCopy" class="ref-copy">&#10697;</span>
           </div>
-          <div id="refExternal" class="ref-url" onclick="copyRef(event)" title="Kopieren">
-            <span class="ref-scheme">https://</span><span class="ref-host" id="refExternalHost"></span><span class="ref-path" id="refExternalPath"></span>
-            <span class="ref-copy">&#10697;</span>
+          <div id="refExternal" class="ref-url" onclick="copyUrl('external')" title="Kopieren">
+            <span id="refExternalText" class="ref-text"></span>
+            <span id="refExternalCopy" class="ref-copy">&#10697;</span>
           </div>
         </div>
         <label>Interne URL</label>
@@ -166,21 +174,28 @@
       try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
       catch(e) { return {}; }
     }
-    function saveStore(store) {
-      localStorage.setItem(STORE_KEY, JSON.stringify(store));
-    }
-    function getAddon(slug) {
-      return loadStore()[slug] || {};
-    }
+    function saveStore(store) { localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
+    function getAddon(slug) { return loadStore()[slug] || {}; }
     function setAddon(slug, data) {
-      const store = loadStore();
+      var store = loadStore();
       store[slug] = Object.assign(store[slug] || {}, data);
       saveStore(store);
     }
 
-    // ── Global settings ────────────────────────────────────────────
+    // ── Theme ────────────────────────────────────────────────────
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+      document.getElementById('themeBtn').textContent = theme === 'dark' ? '\u263E' : '\u2600';
+    }
+    function toggleTheme() {
+      var cur = localStorage.getItem('theme') || 'dark';
+      applyTheme(cur === 'dark' ? 'light' : 'dark');
+    }
+
+    // ── Global settings ─────────────────────────────────────────
     function toggleGlobalSettings() {
-      const panel = document.getElementById('globalSettings');
+      var panel = document.getElementById('globalSettings');
       if (panel.classList.contains('hidden')) {
         document.getElementById('gsInternal').value = localStorage.getItem('internalBase') || '';
         document.getElementById('gsExternal').value = localStorage.getItem('externalBase') || '';
@@ -189,27 +204,25 @@
         panel.classList.add('hidden');
       }
     }
-
     function saveGlobalSettings() {
-      const internal = document.getElementById('gsInternal').value.trim().replace(/\/$/, '');
-      const external = document.getElementById('gsExternal').value.trim().replace(/\/$/, '');
-      if (internal) localStorage.setItem('internalBase', internal);
-      else localStorage.removeItem('internalBase');
-      if (external) localStorage.setItem('externalBase', external);
-      else localStorage.removeItem('externalBase');
+      var internal = document.getElementById('gsInternal').value.trim().replace(/\/$/, '');
+      var external = document.getElementById('gsExternal').value.trim().replace(/\/$/, '');
+      if (internal) localStorage.setItem('internalBase', internal); else localStorage.removeItem('internalBase');
+      if (external) localStorage.setItem('externalBase', external); else localStorage.removeItem('externalBase');
       document.getElementById('globalSettings').classList.add('hidden');
       showToast('Basis-URLs gespeichert.');
     }
 
     // ── Mode ─────────────────────────────────────────────────────
-    let currentMode = localStorage.getItem('urlMode') || 'internal';
-    let editMode = false;
+    var currentMode = localStorage.getItem('urlMode') || 'internal';
+    var editMode = false;
 
     function setMode(mode) {
       currentMode = mode;
       localStorage.setItem('urlMode', mode);
-      document.querySelectorAll('.toggle-btn').forEach(btn =>
-        btn.classList.toggle('active', btn.dataset.mode === mode));
+      document.querySelectorAll('.toggle-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
     }
 
     function toggleEditMode() {
@@ -222,9 +235,9 @@
 
     // ── Visibility ───────────────────────────────────────────────
     function applyVisibility() {
-      const store = loadStore();
-      document.querySelectorAll('.card').forEach(card => {
-        const s = store[card.dataset.slug] || {};
+      var store = loadStore();
+      document.querySelectorAll('.card').forEach(function(card) {
+        var s = store[card.dataset.slug] || {};
         if (s.hidden && !editMode) {
           card.style.display = 'none';
         } else {
@@ -239,43 +252,43 @@
       if (editMode) {
         openModal(card);
       } else {
-        const slug = card.dataset.slug;
-        const s = getAddon(slug);
-        const url = currentMode === 'external'
+        var slug = card.dataset.slug;
+        var s = getAddon(slug);
+        var url = currentMode === 'external'
           ? (s.externalUrl || s.internalUrl || buildIngressUrl(card))
           : (s.internalUrl || buildIngressUrl(card));
-        if (!url) { showToast('Keine URL — bitte im ✎ Bearbeitungsmodus eintragen.'); return; }
+        if (!url) { showToast('Keine URL — bitte im Bearbeitungsmodus eintragen.'); return; }
         window.open(url, '_blank');
       }
     }
 
     function buildIngressUrl(card) {
       if (card.dataset.hasIngress !== 'true') return null;
-      const base = localStorage.getItem('internalBase') ||
-        `${window.location.protocol}//${window.location.hostname}:8123`;
-      return `${base.replace(/\/$/, '')}/hassio/ingress/${card.dataset.slug}`;
+      var base = localStorage.getItem('internalBase') || 'http://' + window.location.hostname + ':8123';
+      return base.replace(/\/$/, '') + '/hassio/ingress/' + card.dataset.slug;
     }
 
     // ── Modal ────────────────────────────────────────────────────
-    let _currentSlug = null;
+    var _currentSlug = null;
+    var _refUrls = { internal: '', external: '' };  // plain JS vars for copy
 
     function openModal(card) {
       _currentSlug = card.dataset.slug;
-      const s = getAddon(_currentSlug);
-      const name = card.querySelector('.card-name').textContent;
+      var s = getAddon(_currentSlug);
+      var name = card.querySelector('.card-name').textContent;
 
       document.getElementById('modalName').textContent = name;
       document.getElementById('modalSlug').textContent = _currentSlug;
       document.getElementById('modalSlugCode').textContent = _currentSlug;
-      document.getElementById('modalIcon').src = `icon/${_currentSlug}`;
+      document.getElementById('modalIcon').src = 'icon/' + _currentSlug;
       document.getElementById('modalInternal').value = s.internalUrl || '';
       document.getElementById('modalExternal').value = s.externalUrl || '';
       document.getElementById('modalHidden').checked = !!s.hidden;
 
       // Ports reference
-      let ports = [];
+      var ports = [];
       try { ports = JSON.parse(card.dataset.ports || '[]'); } catch(e) {}
-      const portsRow = document.getElementById('modalPortsRow');
+      var portsRow = document.getElementById('modalPortsRow');
       if (ports.length) {
         document.getElementById('modalPortsCode').textContent = ports.join(', ');
         portsRow.style.display = '';
@@ -283,30 +296,22 @@
         portsRow.style.display = 'none';
       }
 
-      // HA base URL reference — always update both rows with current slug
-      const internalBase = (localStorage.getItem('internalBase') || `http://${window.location.hostname}:8123`).replace(/\/$/, '');
-      const externalBase = (localStorage.getItem('externalBase') || '').replace(/\/$/, '');
-      const ingressPath = `/hassio/ingress/${_currentSlug}`;
+      // HA reference URLs — stored in plain variables, not DOM attributes
+      var internalBase = (localStorage.getItem('internalBase') || 'http://' + window.location.hostname + ':8123').replace(/\/$/, '');
+      var externalBase = (localStorage.getItem('externalBase') || '').replace(/\/$/, '');
+      var ingressPath = '/hassio/ingress/' + _currentSlug;
 
-      const intEl = document.getElementById('refInternal');
-      const extEl = document.getElementById('refExternal');
-      const intUrl = internalBase + ingressPath;
-      const extUrl = externalBase ? externalBase + ingressPath : '';
+      _refUrls.internal = internalBase + ingressPath;
+      _refUrls.external = externalBase ? externalBase + ingressPath : '';
 
-      document.getElementById('refInternalHost').textContent = internalBase.replace(/^https?:\/\//, '');
-      document.getElementById('refInternalPath').textContent = ingressPath;
-      intEl.setAttribute('data-full-url', intUrl);
+      document.getElementById('refInternalText').textContent = _refUrls.internal;
+      document.getElementById('refExternalText').textContent = _refUrls.external || '(keine externe Basis-URL konfiguriert)';
+      document.getElementById('refExternal').style.opacity = _refUrls.external ? '1' : '0.4';
+      document.getElementById('refExternal').style.pointerEvents = _refUrls.external ? '' : 'none';
 
-      document.getElementById('refExternalHost').textContent = externalBase ? externalBase.replace(/^https?:\/\//, '') : '—';
-      document.getElementById('refExternalPath').textContent = externalBase ? ingressPath : ' (keine externe URL konfiguriert)';
-      extEl.setAttribute('data-full-url', extUrl);
-      extEl.style.opacity = externalBase ? '1' : '0.4';
-      extEl.style.pointerEvents = externalBase ? '' : 'none';
-
-      // Highlight active card
-      document.querySelectorAll('.card').forEach(c => c.classList.remove('editing'));
+      // Highlight
+      document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
       card.classList.add('editing');
-
       document.getElementById('modalOverlay').classList.remove('hidden');
       document.getElementById('modalInternal').focus();
     }
@@ -314,7 +319,7 @@
     function closeModal(event) {
       if (event && event.target !== document.getElementById('modalOverlay') && event.type === 'click') return;
       document.getElementById('modalOverlay').classList.add('hidden');
-      document.querySelectorAll('.card').forEach(c => c.classList.remove('editing'));
+      document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
       _currentSlug = null;
     }
 
@@ -326,99 +331,107 @@
         hidden: document.getElementById('modalHidden').checked,
       });
       document.getElementById('modalOverlay').classList.add('hidden');
-      document.querySelectorAll('.card').forEach(c => c.classList.remove('editing'));
+      document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
       applyVisibility();
       showToast('Gespeichert.');
       _currentSlug = null;
     }
 
-    // ── Copy ref URL ─────────────────────────────────────────────
-    function copyRef(e) {
-      // Find the .ref-url div even when a child span triggered the event
-      const el = (e.target || e).closest ? (e.target || e).closest('.ref-url') : e;
-      if (!el) return;
-      const url = el.getAttribute('data-full-url');
+    // ── Copy ref URL — reads from plain JS variable, no DOM attr ─
+    function copyUrl(which) {
+      var url = _refUrls[which];
       if (!url) return;
-      navigator.clipboard.writeText(url).then(() => {
-        const icon = el.querySelector('.ref-copy');
-        const orig = icon.textContent;
-        icon.textContent = '✓';
-        setTimeout(() => icon.textContent = orig, 1500);
-        showToast('Kopiert: ' + url);
-      }).catch(() => {
-        // Fallback for non-HTTPS contexts
-        const ta = document.createElement('textarea');
-        ta.value = url;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        showToast('Kopiert: ' + url);
-      });
+      var iconEl = document.getElementById(which === 'internal' ? 'refInternalCopy' : 'refExternalCopy');
+
+      // Try modern clipboard API first, fallback for HTTP
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function() {
+          flashCopy(iconEl, url);
+        }).catch(function() {
+          fallbackCopy(url, iconEl);
+        });
+      } else {
+        fallbackCopy(url, iconEl);
+      }
+    }
+    function fallbackCopy(url, iconEl) {
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      flashCopy(iconEl, url);
+    }
+    function flashCopy(iconEl, url) {
+      var orig = iconEl.textContent;
+      iconEl.textContent = '\u2713';
+      setTimeout(function() { iconEl.textContent = orig; }, 1500);
+      showToast('Kopiert: ' + url);
     }
 
     // ── Refresh ──────────────────────────────────────────────────
     function refreshData() {
       fetch('api/refresh')
-        .then(r => r.json())
-        .then(() => window.location.reload())
-        .catch(() => showToast('Fehler beim Aktualisieren.'));
+        .then(function(r) { return r.json(); })
+        .then(function() { window.location.reload(); })
+        .catch(function() { showToast('Fehler beim Aktualisieren.'); });
     }
 
     // ── Toast ────────────────────────────────────────────────────
     function showToast(msg) {
-      const t = document.getElementById('toast');
+      var t = document.getElementById('toast');
       t.textContent = msg;
       t.classList.remove('hidden');
-      setTimeout(() => t.classList.add('hidden'), 3000);
+      setTimeout(function() { t.classList.add('hidden'); }, 3000);
     }
 
     // ── Sortable ─────────────────────────────────────────────────
-    const ORDER_KEY = 'startpanel_order';
+    var ORDER_KEY = 'startpanel_order';
 
     function saveOrder(gridId) {
-      const el = document.getElementById(gridId);
+      var el = document.getElementById(gridId);
       if (!el) return;
-      const order = [...el.querySelectorAll('.card')].map(c => c.dataset.slug);
-      const stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
+      var order = Array.from(el.querySelectorAll('.card')).map(function(c) { return c.dataset.slug; });
+      var stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
       stored[gridId] = order;
       localStorage.setItem(ORDER_KEY, JSON.stringify(stored));
     }
-
     function applyOrder(gridId) {
-      const el = document.getElementById(gridId);
+      var el = document.getElementById(gridId);
       if (!el) return;
-      const stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
-      const order = stored[gridId];
+      var stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
+      var order = stored[gridId];
       if (!order) return;
-      order.forEach(slug => {
-        const card = el.querySelector(`[data-slug="${slug}"]`);
+      order.forEach(function(slug) {
+        var card = el.querySelector('[data-slug="' + slug + '"]');
         if (card) el.appendChild(card);
       });
     }
-
     function initSortable(gridId) {
-      const el = document.getElementById(gridId);
+      var el = document.getElementById(gridId);
       if (!el) return;
       Sortable.create(el, {
         animation: 150,
         ghostClass: 'card-ghost',
         chosenClass: 'card-chosen',
-        disabled: true,          // only active in edit mode
-        onEnd: () => saveOrder(gridId),
+        disabled: true,
+        onEnd: function() { saveOrder(gridId); },
       });
     }
-
     function setSortableEnabled(enabled) {
-      ['grid-running', 'grid-stopped'].forEach(id => {
-        const el = document.getElementById(id);
+      ['grid-running', 'grid-stopped'].forEach(function(id) {
+        var el = document.getElementById(id);
         if (!el) return;
-        const s = Sortable.get(el);
+        var s = Sortable.get(el);
         if (s) s.option('disabled', !enabled);
       });
     }
 
     // ── Init ─────────────────────────────────────────────────────
+    applyTheme(localStorage.getItem('theme') || 'dark');
     setMode(currentMode);
     applyOrder('grid-running');
     applyOrder('grid-stopped');
