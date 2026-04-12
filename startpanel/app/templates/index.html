@@ -241,25 +241,20 @@
         portsRow.style.display = 'none';
       }
 
-      // HA base URL reference
+      // HA base URL reference — always update both rows with current slug
       const internalBase = (localStorage.getItem('internalBase') || `http://${window.location.hostname}:8123`).replace(/\/$/, '');
       const externalBase = (localStorage.getItem('externalBase') || '').replace(/\/$/, '');
       const ingressPath = `/hassio/ingress/${_currentSlug}`;
 
-      function fillRef(elHost, elPath, base, scheme) {
-        const hostPart = base.replace(/^https?:\/\//, '');
-        elHost.textContent = hostPart;
-        elPath.textContent = ingressPath;
-        elHost.closest('.ref-url').dataset.fullUrl = base + ingressPath;
-        elHost.closest('.ref-url').style.display = '';
-      }
-      fillRef(document.getElementById('refInternalHost'), document.getElementById('refInternalPath'), internalBase, 'http');
-      if (externalBase) {
-        fillRef(document.getElementById('refExternalHost'), document.getElementById('refExternalPath'), externalBase, 'https');
-        document.getElementById('refExternal').style.display = '';
-      } else {
-        document.getElementById('refExternal').style.display = 'none';
-      }
+      document.getElementById('refInternalHost').textContent = internalBase.replace(/^https?:\/\//, '');
+      document.getElementById('refInternalPath').textContent = ingressPath;
+      document.getElementById('refInternal').dataset.fullUrl = internalBase + ingressPath;
+
+      document.getElementById('refExternalHost').textContent = externalBase ? externalBase.replace(/^https?:\/\//, '') : '—';
+      document.getElementById('refExternalPath').textContent = externalBase ? ingressPath : ' (keine externe URL konfiguriert)';
+      document.getElementById('refExternal').dataset.fullUrl = externalBase ? externalBase + ingressPath : '';
+      document.getElementById('refExternal').style.opacity = externalBase ? '1' : '0.4';
+      document.getElementById('refExternal').style.pointerEvents = externalBase ? '' : 'none';
 
       // Highlight active card
       document.querySelectorAll('.card').forEach(c => c.classList.remove('editing'));
