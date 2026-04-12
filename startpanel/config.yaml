@@ -1,6 +1,6 @@
 name: "Startpanel"
 description: "Dashboard showing all Home Assistant addons with icons and quick access links"
-version: "0.17"
+version: "0.18"
 slug: "startpanel"
 init: false
 arch:
@@ -15,5 +15,9 @@ panel_icon: mdi:view-dashboard-variant
 panel_title: Startpanel
 hassio_api: true
 hassio_role: admin
+ports:
+  8099/tcp: 7080
+ports_description:
+  8099/tcp: "Startpanel Web UI"
 options: {}
 schema: {}

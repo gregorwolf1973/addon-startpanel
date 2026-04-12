@@ -17,9 +17,26 @@
         <button class="toggle-btn" data-mode="external" onclick="setMode('external')">Extern</button>
       </div>
       <button id="editBtn" class="icon-btn" onclick="toggleEditMode()" title="Bearbeiten">&#9998;</button>
+      <button class="icon-btn" onclick="toggleGlobalSettings()" title="Einstellungen">&#9881;</button>
       <button class="icon-btn" onclick="refreshData()" title="Aktualisieren">&#8635;</button>
     </div>
   </header>
+
+  <!-- Global Settings -->
+  <div id="globalSettings" class="global-settings hidden">
+    <div class="settings-row">
+      <label>Interne Basis-URL (z.B. http://192.168.178.37:8123)</label>
+      <input type="text" id="gsInternal" placeholder="http://192.168.178.37:8123" />
+    </div>
+    <div class="settings-row">
+      <label>Externe Basis-URL (z.B. https://meinheim.duckdns.org)</label>
+      <input type="text" id="gsExternal" placeholder="https://meinheim.duckdns.org" />
+    </div>
+    <div class="settings-actions">
+      <button onclick="saveGlobalSettings()">Speichern</button>
+      <button class="secondary" onclick="toggleGlobalSettings()">Abbrechen</button>
+    </div>
+  </div>
 
   <main id="main">
     {% if running %}
@@ -161,6 +178,29 @@
       saveStore(store);
     }
 
+    // ── Global settings ────────────────────────────────────────────
+    function toggleGlobalSettings() {
+      const panel = document.getElementById('globalSettings');
+      if (panel.classList.contains('hidden')) {
+        document.getElementById('gsInternal').value = localStorage.getItem('internalBase') || '';
+        document.getElementById('gsExternal').value = localStorage.getItem('externalBase') || '';
+        panel.classList.remove('hidden');
+      } else {
+        panel.classList.add('hidden');
+      }
+    }
+
+    function saveGlobalSettings() {
+      const internal = document.getElementById('gsInternal').value.trim().replace(/\/$/, '');
+      const external = document.getElementById('gsExternal').value.trim().replace(/\/$/, '');
+      if (internal) localStorage.setItem('internalBase', internal);
+      else localStorage.removeItem('internalBase');
+      if (external) localStorage.setItem('externalBase', external);
+      else localStorage.removeItem('externalBase');
+      document.getElementById('globalSettings').classList.add('hidden');
+      showToast('Basis-URLs gespeichert.');
+    }
+
     // ── Mode ─────────────────────────────────────────────────────
     let currentMode = localStorage.getItem('urlMode') || 'internal';
     let editMode = false;
@@ -248,15 +288,20 @@
       const externalBase = (localStorage.getItem('externalBase') || '').replace(/\/$/, '');
       const ingressPath = `/hassio/ingress/${_currentSlug}`;
 
+      const intEl = document.getElementById('refInternal');
+      const extEl = document.getElementById('refExternal');
+      const intUrl = internalBase + ingressPath;
+      const extUrl = externalBase ? externalBase + ingressPath : '';
+
       document.getElementById('refInternalHost').textContent = internalBase.replace(/^https?:\/\//, '');
       document.getElementById('refInternalPath').textContent = ingressPath;
-      document.getElementById('refInternal').dataset.fullUrl = internalBase + ingressPath;
+      intEl.setAttribute('data-full-url', intUrl);
 
       document.getElementById('refExternalHost').textContent = externalBase ? externalBase.replace(/^https?:\/\//, '') : '—';
       document.getElementById('refExternalPath').textContent = externalBase ? ingressPath : ' (keine externe URL konfiguriert)';
-      document.getElementById('refExternal').dataset.fullUrl = externalBase ? externalBase + ingressPath : '';
-      document.getElementById('refExternal').style.opacity = externalBase ? '1' : '0.4';
-      document.getElementById('refExternal').style.pointerEvents = externalBase ? '' : 'none';
+      extEl.setAttribute('data-full-url', extUrl);
+      extEl.style.opacity = externalBase ? '1' : '0.4';
+      extEl.style.pointerEvents = externalBase ? '' : 'none';
 
       // Highlight active card
       document.querySelectorAll('.card').forEach(c => c.classList.remove('editing'));
@@ -289,14 +334,26 @@
 
     // ── Copy ref URL ─────────────────────────────────────────────
     function copyRef(e) {
-      const el = e.currentTarget;  // always the .ref-url div, not a child span
-      const url = el.dataset.fullUrl;
+      // Find the .ref-url div even when a child span triggered the event
+      const el = (e.target || e).closest ? (e.target || e).closest('.ref-url') : e;
+      if (!el) return;
+      const url = el.getAttribute('data-full-url');
       if (!url) return;
       navigator.clipboard.writeText(url).then(() => {
         const icon = el.querySelector('.ref-copy');
         const orig = icon.textContent;
         icon.textContent = '✓';
         setTimeout(() => icon.textContent = orig, 1500);
+        showToast('Kopiert: ' + url);
+      }).catch(() => {
+        // Fallback for non-HTTPS contexts
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast('Kopiert: ' + url);
       });
     }
 
