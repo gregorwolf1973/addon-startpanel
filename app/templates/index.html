@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Startpanel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+  <header>
+    <h1>Startpanel</h1>
+    <div class="controls">
+      <div class="url-toggle" id="urlToggle">
+        <button class="toggle-btn active" data-mode="internal" onclick="setMode('internal')">Intern</button>
+        <button class="toggle-btn" data-mode="external" onclick="setMode('external')">Extern</button>
+      </div>
+      <button class="refresh-btn" onclick="refreshData()" title="Aktualisieren">&#8635;</button>
+    </div>
+  </header>
+
+  <main id="main">
+
+    {% if running %}
+    <section>
+      <h2 class="section-title">
+        <span class="status-dot running"></span>
+        Laufend <span class="count">{{ running | length }}</span>
+      </h2>
+      <div class="grid" id="grid-running">
+        {% for addon in running %}
+        <div class="card"
+             data-slug="{{ addon.slug }}"
+             data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
+             data-ingress-entry="{{ addon.ingress_entry }}"
+             data-ports="{{ addon.ports | tojson | e }}"
+             data-state="running"
+             onclick="openAddon(this)">
+          <div class="card-icon">
+            {% if addon.has_icon %}
+            <img src="{{ url_for('icon', slug=addon.slug) }}" alt="{{ addon.name }}" loading="lazy"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
+            {% endif %}
+            <div class="icon-fallback" {% if addon.has_icon %}style="display:none"{% endif %}>
+              {{ addon.name[:2].upper() }}
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="card-name">{{ addon.name }}</div>
+            <div class="card-version">v{{ addon.version }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if stopped %}
+    {% if running %}<div class="separator"></div>{% endif %}
+    <section>
+      <h2 class="section-title">
+        <span class="status-dot stopped"></span>
+        Installiert, nicht aktiv <span class="count">{{ stopped | length }}</span>
+      </h2>
+      <div class="grid" id="grid-stopped">
+        {% for addon in stopped %}
+        <div class="card stopped"
+             data-slug="{{ addon.slug }}"
+             data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
+             data-ingress-entry="{{ addon.ingress_entry }}"
+             data-ports="{{ addon.ports | tojson | e }}"
+             data-state="stopped">
+          <div class="card-icon">
+            {% if addon.has_icon %}
+            <img src="{{ url_for('icon', slug=addon.slug) }}" alt="{{ addon.name }}" loading="lazy"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
+            {% endif %}
+            <div class="icon-fallback" {% if addon.has_icon %}style="display:none"{% endif %}>
+              {{ addon.name[:2].upper() }}
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="card-name">{{ addon.name }}</div>
+            <div class="card-version">v{{ addon.version }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if not running and not stopped %}
+    <div class="empty">Keine Addons gefunden.</div>
+    {% endif %}
+
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    const INTERNAL_URL = {{ internal_url | tojson }};
+    const EXTERNAL_URL = {{ external_url | tojson }};
+    let currentMode = localStorage.getItem('urlMode') || 'internal';
+
+    function setMode(mode) {
+      currentMode = mode;
+      localStorage.setItem('urlMode', mode);
+      document.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+    }
+
+    function buildUrl(card) {
+      const hasIngress = card.dataset.hasIngress === 'true';
+      const ingressEntry = card.dataset.ingressEntry;
+      let ports = {};
+      try { ports = JSON.parse(card.dataset.ports); } catch(e) {}
+      const firstHostPort = Object.values(ports)[0];
+
+      if (currentMode === 'internal') {
+        if (hasIngress && ingressEntry) {
+          return ingressEntry; // relative — works within HA UI
+        }
+        if (firstHostPort) {
+          return `${window.location.protocol}//${window.location.hostname}:${firstHostPort}`;
+        }
+        return null;
+      } else {
+        // external
+        const base = EXTERNAL_URL || INTERNAL_URL;
+        if (hasIngress && ingressEntry) {
+          return base + ingressEntry;
+        }
+        if (firstHostPort) {
+          const extHost = (EXTERNAL_URL
+            ? new URL(EXTERNAL_URL).hostname
+            : window.location.hostname);
+          return `${window.location.protocol}//${extHost}:${firstHostPort}`;
+        }
+        return null;
+      }
+    }
+
+    function openAddon(card) {
+      if (card.dataset.state === 'stopped') {
+        showToast('Addon ist nicht aktiv.');
+        return;
+      }
+      const url = buildUrl(card);
+      if (!url) {
+        showToast('Keine URL verfügbar (kein Ingress, kein Port).');
+        return;
+      }
+      window.open(url, '_blank');
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.remove('hidden');
+      setTimeout(() => t.classList.add('hidden'), 3000);
+    }
+
+    function refreshData() {
+      const btn = document.querySelector('.refresh-btn');
+      btn.classList.add('spinning');
+      fetch('api/refresh')
+        .then(r => r.json())
+        .then(() => { window.location.reload(); })
+        .catch(() => { btn.classList.remove('spinning'); showToast('Fehler beim Aktualisieren.'); });
+    }
+
+    // Apply saved mode on load
+    setMode(currentMode);
+  </script>
+</body>
+</html>
