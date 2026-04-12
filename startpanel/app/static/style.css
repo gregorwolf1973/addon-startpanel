@@ -294,36 +294,6 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
   gap: 10px;
 }
 
-.modal-ref {
-  background: var(--bg);
-  border-radius: 8px;
-  padding: 9px 10px 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-bottom: 2px;
-}
-.ref-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 2px;
-}
-.ref-input {
-  width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 7px 10px;
-  color: var(--accent);
-  font-size: 0.78rem;
-  font-family: monospace;
-  cursor: text;
-  outline: none;
-}
-.ref-input:focus { border-color: var(--accent); }
 
 .modal-meta {
   font-size: 0.78rem;

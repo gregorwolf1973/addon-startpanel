@@ -116,19 +116,10 @@
             &nbsp;·&nbsp;<span class="meta-label">Ports:</span> <code id="modalPortsCode"></code>
           </span>
         </div>
-        <div class="modal-ref">
-          <div class="ref-label">HA Ingress-Adressen (anklicken zum markieren)</div>
-          <input id="refInternalInput" class="ref-input" type="text" readonly onclick="this.select()" />
-          <input id="refExternalInput" class="ref-input" type="text" readonly onclick="this.select()" />
-        </div>
-        <label>Interne Basis-URL</label>
-        <input id="modalInternalBase" type="text" placeholder="http://192.168.178.37:8123" />
         <label>Interne URL</label>
-        <input id="modalInternal" type="text" placeholder="http://192.168.1.1:8080" />
-        <label>Externe Basis-URL</label>
-        <input id="modalExternalBase" type="text" placeholder="https://meine-domain.duckdns.org" />
+        <input id="modalInternal" type="text" placeholder="http://192.168.178.37:8123/hassio/ingress/..." />
         <label>Externe URL</label>
-        <input id="modalExternal" type="text" placeholder="https://meine-domain.de:8080" />
+        <input id="modalExternal" type="text" placeholder="https://meine-domain.de/hassio/ingress/..." />
         <div class="modal-toggle-row">
           <span>Addon ausblenden</span>
           <label class="switch">
@@ -260,9 +251,7 @@
       document.getElementById('modalSlug').textContent = _currentSlug;
       document.getElementById('modalSlugCode').textContent = _currentSlug;
       document.getElementById('modalIcon').src = 'icon/' + _currentSlug;
-      document.getElementById('modalInternalBase').value = getGlobal('internalBase', '');
       document.getElementById('modalInternal').value = s.internalUrl || '';
-      document.getElementById('modalExternalBase').value = getGlobal('externalBase', '');
       document.getElementById('modalExternal').value = s.externalUrl || '';
       document.getElementById('modalHidden').checked = !!s.hidden;
 
@@ -275,20 +264,6 @@
         portsRow.style.display = '';
       } else {
         portsRow.style.display = 'none';
-      }
-
-      // HA ingress reference URLs
-      var internalBase = (getGlobal('internalBase', '') || 'http://' + window.location.hostname + ':8123').replace(/\/$/, '');
-      var externalBase = (getGlobal('externalBase', '') || '').replace(/\/$/, '');
-      var ingressPath = '/hassio/ingress/' + _currentSlug;
-
-      document.getElementById('refInternalInput').value = internalBase + ingressPath;
-      var extInput = document.getElementById('refExternalInput');
-      if (externalBase) {
-        extInput.value = externalBase + ingressPath;
-        extInput.style.display = '';
-      } else {
-        extInput.style.display = 'none';
       }
 
       // Highlight
@@ -308,14 +283,6 @@
     function saveModal() {
       if (!_currentSlug) return;
 
-      // Save global base URLs
-      var intBase = document.getElementById('modalInternalBase').value.trim().replace(/\/$/, '');
-      var extBase = document.getElementById('modalExternalBase').value.trim().replace(/\/$/, '');
-      if (!_settings.global) _settings.global = {};
-      _settings.global.internalBase = intBase;
-      _settings.global.externalBase = extBase;
-
-      // Save per-addon settings
       if (!_settings.addons) _settings.addons = {};
       _settings.addons[_currentSlug] = Object.assign(_settings.addons[_currentSlug] || {}, {
         internalUrl: document.getElementById('modalInternal').value.trim(),
