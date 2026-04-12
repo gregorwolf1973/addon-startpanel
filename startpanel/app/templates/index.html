@@ -112,34 +112,29 @@
 
     function buildUrl(card) {
       const hasIngress = card.dataset.hasIngress === 'true';
-      const ingressEntry = card.dataset.ingressEntry;
+      const slug = card.dataset.slug;
       let ports = {};
       try { ports = JSON.parse(card.dataset.ports); } catch(e) {}
       const firstHostPort = Object.values(ports)[0];
 
-      if (currentMode === 'internal') {
-        // Prefer direct port, fall back to ingress
-        if (firstHostPort) {
-          return `${window.location.protocol}//${window.location.hostname}:${firstHostPort}`;
-        }
-        if (hasIngress && ingressEntry) {
-          return ingressEntry;
-        }
-        return null;
-      } else {
-        // external — prefer direct port, fall back to ingress
-        if (firstHostPort) {
-          const extHost = (EXTERNAL_URL
-            ? new URL(EXTERNAL_URL).hostname
-            : window.location.hostname);
-          return `${window.location.protocol}//${extHost}:${firstHostPort}`;
-        }
-        if (hasIngress && ingressEntry) {
-          const base = EXTERNAL_URL || INTERNAL_URL;
-          return base + ingressEntry;
-        }
-        return null;
+      const internalBase = INTERNAL_URL || `${window.location.protocol}//${window.location.hostname}:8123`;
+      const externalBase = EXTERNAL_URL || internalBase;
+      const base = currentMode === 'external' ? externalBase : internalBase;
+
+      // Prefer direct port over ingress
+      if (firstHostPort) {
+        const host = currentMode === 'external' && EXTERNAL_URL
+          ? new URL(EXTERNAL_URL).hostname
+          : window.location.hostname;
+        return `${window.location.protocol}//${host}:${firstHostPort}`;
       }
+
+      // Ingress: use HA panel URL (requires HA session, works in browser)
+      if (hasIngress) {
+        return `${base}/hassio/ingress/${slug}`;
+      }
+
+      return null;
     }
 
     function openAddon(card) {
