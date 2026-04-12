@@ -1,6 +1,10 @@
-#!/bin/sh
+#!/usr/bin/env bashio
+
 set -e
 
-export PORT=$(bashio::config 'port')
+bashio::log.info "Starting Startpanel..."
+
+export PORT=$(bashio::config 'port' '8099')
+bashio::log.info "Using port: ${PORT}"
 
 exec python3 /app/server.py
