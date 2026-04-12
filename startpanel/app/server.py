@@ -56,14 +56,17 @@ def build_addon_list() -> tuple[list, list]:
         detail = detail_raw.get("data", {})
 
         # Network: maps container_port/proto -> host_port (or None)
+        # Supervisor returns e.g. {"7277/tcp": 7277} or {"7277/tcp": null}
         network_raw = detail.get("network") or {}
         ports = {}
         for key, val in network_raw.items():
             if val is not None:
                 try:
-                    ports[int(key.split("/")[0])] = int(val)
+                    ports[str(key.split("/")[0])] = int(val)
                 except (ValueError, AttributeError):
                     pass
+        if not ports:
+            log.debug("No ports for %s. network=%s", slug, network_raw)
 
         has_ingress = bool(detail.get("ingress"))
         ingress_entry = detail.get("ingress_entry") or ""

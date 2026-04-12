@@ -118,24 +118,25 @@
       const firstHostPort = Object.values(ports)[0];
 
       if (currentMode === 'internal') {
-        if (hasIngress && ingressEntry) {
-          return ingressEntry; // relative — works within HA UI
-        }
+        // Prefer direct port, fall back to ingress
         if (firstHostPort) {
           return `${window.location.protocol}//${window.location.hostname}:${firstHostPort}`;
         }
+        if (hasIngress && ingressEntry) {
+          return ingressEntry;
+        }
         return null;
       } else {
-        // external
-        const base = EXTERNAL_URL || INTERNAL_URL;
-        if (hasIngress && ingressEntry) {
-          return base + ingressEntry;
-        }
+        // external — prefer direct port, fall back to ingress
         if (firstHostPort) {
           const extHost = (EXTERNAL_URL
             ? new URL(EXTERNAL_URL).hostname
             : window.location.hostname);
           return `${window.location.protocol}//${extHost}:${firstHostPort}`;
+        }
+        if (hasIngress && ingressEntry) {
+          const base = EXTERNAL_URL || INTERNAL_URL;
+          return base + ingressEntry;
         }
         return null;
       }
