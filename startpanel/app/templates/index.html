@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="static/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
   <script>
-    // Apply theme before render to prevent flash
     (function() {
       var t = localStorage.getItem('theme') || 'dark';
       document.documentElement.setAttribute('data-theme', t);
@@ -24,27 +23,10 @@
         <button class="toggle-btn" data-mode="external" onclick="setMode('external')">Extern</button>
       </div>
       <button id="editBtn" class="icon-btn" onclick="toggleEditMode()" title="Bearbeiten">&#9998;</button>
-      <button class="icon-btn" onclick="toggleGlobalSettings()" title="Einstellungen">&#9881;</button>
       <button id="themeBtn" class="icon-btn" onclick="toggleTheme()" title="Theme">&#9790;</button>
       <button class="icon-btn" onclick="refreshData()" title="Aktualisieren">&#8635;</button>
     </div>
   </header>
-
-  <!-- Global Settings -->
-  <div id="globalSettings" class="global-settings hidden">
-    <div class="settings-row">
-      <label>Interne Basis-URL (z.B. http://192.168.178.37:8123)</label>
-      <input type="text" id="gsInternal" placeholder="http://192.168.178.37:8123" />
-    </div>
-    <div class="settings-row">
-      <label>Externe Basis-URL (z.B. https://meinheim.duckdns.org)</label>
-      <input type="text" id="gsExternal" placeholder="https://meinheim.duckdns.org" />
-    </div>
-    <div class="settings-actions">
-      <button onclick="saveGlobalSettings()">Speichern</button>
-      <button class="secondary" onclick="toggleGlobalSettings()">Abbrechen</button>
-    </div>
-  </div>
 
   <main id="main">
     {% if running %}
@@ -135,8 +117,8 @@
           </span>
         </div>
         <div class="modal-ref">
-          <div class="ref-label">HA Adressen (Referenz) — Klick kopiert</div>
-          <div id="refInternal" class="ref-url" onclick="copyUrl('internal')" title="Kopieren">
+          <div class="ref-label">HA Ingress-Adressen (Klick kopiert)</div>
+          <div class="ref-url" onclick="copyUrl('internal')" title="Kopieren">
             <span id="refInternalText" class="ref-text"></span>
             <span id="refInternalCopy" class="ref-copy">&#10697;</span>
           </div>
@@ -145,10 +127,14 @@
             <span id="refExternalCopy" class="ref-copy">&#10697;</span>
           </div>
         </div>
+        <label>Interne Basis-URL</label>
+        <input id="modalInternalBase" type="text" placeholder="http://192.168.178.37:8123" />
         <label>Interne URL</label>
         <input id="modalInternal" type="text" placeholder="http://192.168.1.1:8080" />
+        <label>Externe Basis-URL</label>
+        <input id="modalExternalBase" type="text" placeholder="https://meine-domain.duckdns.org" />
         <label>Externe URL</label>
-        <input id="modalExternal" type="text" placeholder="https://meine-domain.de" />
+        <input id="modalExternal" type="text" placeholder="https://meine-domain.de:8080" />
         <div class="modal-toggle-row">
           <span>Addon ausblenden</span>
           <label class="switch">
@@ -167,22 +153,42 @@
   <div id="toast" class="toast hidden"></div>
 
   <script>
-    // ── Storage helpers ──────────────────────────────────────────
-    const STORE_KEY = 'startpanel_addons';
+    // ── Server-side settings ─────────────────────────────────────
+    var _settings = {};  // loaded from server on init
 
-    function loadStore() {
-      try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
-      catch(e) { return {}; }
+    function loadSettings() {
+      return fetch('api/settings').then(function(r) { return r.json(); }).then(function(data) {
+        _settings = data || {};
+      }).catch(function() { _settings = {}; });
     }
-    function saveStore(store) { localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
-    function getAddon(slug) { return loadStore()[slug] || {}; }
+
+    function persistSettings() {
+      fetch('api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(_settings),
+      }).catch(function() { showToast('Fehler beim Speichern.'); });
+    }
+
+    function getAddon(slug) { return (_settings.addons || {})[slug] || {}; }
+
     function setAddon(slug, data) {
-      var store = loadStore();
-      store[slug] = Object.assign(store[slug] || {}, data);
-      saveStore(store);
+      if (!_settings.addons) _settings.addons = {};
+      _settings.addons[slug] = Object.assign(_settings.addons[slug] || {}, data);
+      persistSettings();
     }
 
-    // ── Theme ────────────────────────────────────────────────────
+    function getGlobal(key, fallback) {
+      return (_settings.global || {})[key] || fallback;
+    }
+
+    function setGlobal(key, val) {
+      if (!_settings.global) _settings.global = {};
+      _settings.global[key] = val;
+      persistSettings();
+    }
+
+    // ── Theme (local only — UI preference) ───────────────────────
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
       localStorage.setItem('theme', theme);
@@ -193,33 +199,13 @@
       applyTheme(cur === 'dark' ? 'light' : 'dark');
     }
 
-    // ── Global settings ─────────────────────────────────────────
-    function toggleGlobalSettings() {
-      var panel = document.getElementById('globalSettings');
-      if (panel.classList.contains('hidden')) {
-        document.getElementById('gsInternal').value = localStorage.getItem('internalBase') || '';
-        document.getElementById('gsExternal').value = localStorage.getItem('externalBase') || '';
-        panel.classList.remove('hidden');
-      } else {
-        panel.classList.add('hidden');
-      }
-    }
-    function saveGlobalSettings() {
-      var internal = document.getElementById('gsInternal').value.trim().replace(/\/$/, '');
-      var external = document.getElementById('gsExternal').value.trim().replace(/\/$/, '');
-      if (internal) localStorage.setItem('internalBase', internal); else localStorage.removeItem('internalBase');
-      if (external) localStorage.setItem('externalBase', external); else localStorage.removeItem('externalBase');
-      document.getElementById('globalSettings').classList.add('hidden');
-      showToast('Basis-URLs gespeichert.');
-    }
-
     // ── Mode ─────────────────────────────────────────────────────
-    var currentMode = localStorage.getItem('urlMode') || 'internal';
+    var currentMode = 'internal';
     var editMode = false;
 
     function setMode(mode) {
       currentMode = mode;
-      localStorage.setItem('urlMode', mode);
+      setGlobal('urlMode', mode);
       document.querySelectorAll('.toggle-btn').forEach(function(btn) {
         btn.classList.toggle('active', btn.dataset.mode === mode);
       });
@@ -235,9 +221,9 @@
 
     // ── Visibility ───────────────────────────────────────────────
     function applyVisibility() {
-      var store = loadStore();
+      var addons = _settings.addons || {};
       document.querySelectorAll('.card').forEach(function(card) {
-        var s = store[card.dataset.slug] || {};
+        var s = addons[card.dataset.slug] || {};
         if (s.hidden && !editMode) {
           card.style.display = 'none';
         } else {
@@ -264,13 +250,13 @@
 
     function buildIngressUrl(card) {
       if (card.dataset.hasIngress !== 'true') return null;
-      var base = localStorage.getItem('internalBase') || 'http://' + window.location.hostname + ':8123';
+      var base = getGlobal('internalBase', 'http://' + window.location.hostname + ':8123');
       return base.replace(/\/$/, '') + '/hassio/ingress/' + card.dataset.slug;
     }
 
     // ── Modal ────────────────────────────────────────────────────
     var _currentSlug = null;
-    var _refUrls = { internal: '', external: '' };  // plain JS vars for copy
+    var _refUrls = { internal: '', external: '' };
 
     function openModal(card) {
       _currentSlug = card.dataset.slug;
@@ -281,7 +267,9 @@
       document.getElementById('modalSlug').textContent = _currentSlug;
       document.getElementById('modalSlugCode').textContent = _currentSlug;
       document.getElementById('modalIcon').src = 'icon/' + _currentSlug;
+      document.getElementById('modalInternalBase').value = getGlobal('internalBase', '');
       document.getElementById('modalInternal').value = s.internalUrl || '';
+      document.getElementById('modalExternalBase').value = getGlobal('externalBase', '');
       document.getElementById('modalExternal').value = s.externalUrl || '';
       document.getElementById('modalHidden').checked = !!s.hidden;
 
@@ -296,16 +284,16 @@
         portsRow.style.display = 'none';
       }
 
-      // HA reference URLs — stored in plain variables, not DOM attributes
-      var internalBase = (localStorage.getItem('internalBase') || 'http://' + window.location.hostname + ':8123').replace(/\/$/, '');
-      var externalBase = (localStorage.getItem('externalBase') || '').replace(/\/$/, '');
+      // HA ingress reference URLs
+      var internalBase = (getGlobal('internalBase', '') || 'http://' + window.location.hostname + ':8123').replace(/\/$/, '');
+      var externalBase = (getGlobal('externalBase', '') || '').replace(/\/$/, '');
       var ingressPath = '/hassio/ingress/' + _currentSlug;
 
       _refUrls.internal = internalBase + ingressPath;
       _refUrls.external = externalBase ? externalBase + ingressPath : '';
 
       document.getElementById('refInternalText').textContent = _refUrls.internal;
-      document.getElementById('refExternalText').textContent = _refUrls.external || '(keine externe Basis-URL konfiguriert)';
+      document.getElementById('refExternalText').textContent = _refUrls.external || '(keine externe Basis-URL)';
       document.getElementById('refExternal').style.opacity = _refUrls.external ? '1' : '0.4';
       document.getElementById('refExternal').style.pointerEvents = _refUrls.external ? '' : 'none';
 
@@ -325,11 +313,24 @@
 
     function saveModal() {
       if (!_currentSlug) return;
-      setAddon(_currentSlug, {
+
+      // Save global base URLs
+      var intBase = document.getElementById('modalInternalBase').value.trim().replace(/\/$/, '');
+      var extBase = document.getElementById('modalExternalBase').value.trim().replace(/\/$/, '');
+      if (!_settings.global) _settings.global = {};
+      _settings.global.internalBase = intBase;
+      _settings.global.externalBase = extBase;
+
+      // Save per-addon settings
+      if (!_settings.addons) _settings.addons = {};
+      _settings.addons[_currentSlug] = Object.assign(_settings.addons[_currentSlug] || {}, {
         internalUrl: document.getElementById('modalInternal').value.trim(),
         externalUrl: document.getElementById('modalExternal').value.trim(),
         hidden: document.getElementById('modalHidden').checked,
       });
+
+      persistSettings();
+
       document.getElementById('modalOverlay').classList.add('hidden');
       document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
       applyVisibility();
@@ -337,13 +338,12 @@
       _currentSlug = null;
     }
 
-    // ── Copy ref URL — reads from plain JS variable, no DOM attr ─
+    // ── Copy ref URL ─────────────────────────────────────────────
     function copyUrl(which) {
       var url = _refUrls[which];
       if (!url) return;
       var iconEl = document.getElementById(which === 'internal' ? 'refInternalCopy' : 'refExternalCopy');
 
-      // Try modern clipboard API first, fallback for HTTP
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(function() {
           flashCopy(iconEl, url);
@@ -389,21 +389,18 @@
     }
 
     // ── Sortable ─────────────────────────────────────────────────
-    var ORDER_KEY = 'startpanel_order';
-
     function saveOrder(gridId) {
       var el = document.getElementById(gridId);
       if (!el) return;
       var order = Array.from(el.querySelectorAll('.card')).map(function(c) { return c.dataset.slug; });
-      var stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
-      stored[gridId] = order;
-      localStorage.setItem(ORDER_KEY, JSON.stringify(stored));
+      if (!_settings.order) _settings.order = {};
+      _settings.order[gridId] = order;
+      persistSettings();
     }
     function applyOrder(gridId) {
       var el = document.getElementById(gridId);
       if (!el) return;
-      var stored = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
-      var order = stored[gridId];
+      var order = (_settings.order || {})[gridId];
       if (!order) return;
       order.forEach(function(slug) {
         var card = el.querySelector('[data-slug="' + slug + '"]');
@@ -432,12 +429,17 @@
 
     // ── Init ─────────────────────────────────────────────────────
     applyTheme(localStorage.getItem('theme') || 'dark');
-    setMode(currentMode);
-    applyOrder('grid-running');
-    applyOrder('grid-stopped');
-    applyVisibility();
-    initSortable('grid-running');
-    initSortable('grid-stopped');
+
+    // Load settings from server, then apply
+    loadSettings().then(function() {
+      currentMode = getGlobal('urlMode', 'internal');
+      setMode(currentMode);
+      applyOrder('grid-running');
+      applyOrder('grid-stopped');
+      applyVisibility();
+      initSortable('grid-running');
+      initSortable('grid-stopped');
+    });
   </script>
 </body>
 </html>

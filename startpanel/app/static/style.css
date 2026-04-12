@@ -56,40 +56,7 @@ h1 { font-size: 1.2rem; font-weight: 600; }
 
 .controls { display: flex; align-items: center; gap: 8px; }
 
-/* ── Global settings panel ── */
-.global-settings {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 16px 24px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: flex-end;
-}
-.global-settings.hidden { display: none; }
-.settings-row {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  flex: 1;
-  min-width: 220px;
-}
-.settings-row label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-.settings-row input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  padding: 8px 12px;
-  font-size: 0.9rem;
-  outline: none;
-}
-.settings-row input:focus { border-color: var(--accent); }
-.settings-actions { display: flex; gap: 8px; align-self: flex-end; }
+/* (global settings removed — now in modal) */
 .settings-actions button {
   background: var(--accent);
   border: none;

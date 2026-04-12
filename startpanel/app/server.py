@@ -1,7 +1,8 @@
 import os
+import json
 import base64
 import logging
-from flask import Flask, render_template, jsonify, Response
+from flask import Flask, render_template, jsonify, request, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
 import requests
 
@@ -15,6 +16,7 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HEADERS = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
 PORT = 8099
+SETTINGS_FILE = "/data/settings.json"
 
 log.info("=== Startpanel booting, SUPERVISOR_TOKEN present: %s ===", bool(SUPERVISOR_TOKEN))
 
@@ -25,6 +27,22 @@ _FALLBACK_PNG = base64.b64decode(
 )
 
 
+# ── Settings persistence ──────────────────────────────────────────
+def load_settings() -> dict:
+    try:
+        with open(SETTINGS_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_settings(data: dict):
+    os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+# ── Supervisor API ────────────────────────────────────────────────
 def supervisor_get(path: str) -> dict:
     try:
         r = requests.get(f"{SUPERVISOR_URL}{path}", headers=HEADERS, timeout=10)
@@ -46,7 +64,6 @@ def build_addon_list() -> tuple[list, list]:
         state = a.get("state", "unknown")
         has_ingress = bool(a.get("ingress"))
 
-        # Fetch detail only for port info (mapped host ports, excluding ingress)
         detail = supervisor_get(f"/addons/{slug}/info").get("data", {})
         network_raw = detail.get("network") or {}
         ingress_port = detail.get("ingress_port")
@@ -58,7 +75,7 @@ def build_addon_list() -> tuple[list, list]:
                 container_port = int(key.split("/")[0])
                 host_port = int(val)
                 if ingress_port and container_port == int(ingress_port):
-                    continue  # skip ingress port
+                    continue
                 ports.append(host_port)
             except (ValueError, AttributeError):
                 pass
@@ -80,7 +97,6 @@ def build_addon_list() -> tuple[list, list]:
 
     running.sort(key=lambda x: x["name"].lower())
     stopped.sort(key=lambda x: x["name"].lower())
-
     return running, stopped
 
 
@@ -92,6 +108,7 @@ def _addon_has_icon(slug: str) -> bool:
         return False
 
 
+# ── Routes ────────────────────────────────────────────────────────
 @app.route("/")
 def index():
     running, stopped = build_addon_list()
@@ -117,6 +134,18 @@ def api_refresh():
     _icon_cache.clear()
     running, stopped = build_addon_list()
     return jsonify(running=running, stopped=stopped)
+
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    return jsonify(load_settings())
+
+
+@app.route("/api/settings", methods=["POST"])
+def post_settings():
+    data = request.get_json(force=True)
+    save_settings(data)
+    return jsonify(ok=True)
 
 
 if __name__ == "__main__":
