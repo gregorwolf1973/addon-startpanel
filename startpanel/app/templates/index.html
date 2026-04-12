@@ -108,6 +108,17 @@
             &nbsp;·&nbsp;<span class="meta-label">Ports:</span> <code id="modalPortsCode"></code>
           </span>
         </div>
+        <div class="modal-ref">
+          <div class="ref-label">HA Adressen (Referenz)</div>
+          <div id="refInternal" class="ref-url" onclick="copyRef(this)" title="Kopieren">
+            <span class="ref-scheme">http://</span><span class="ref-host" id="refInternalHost"></span><span class="ref-path" id="refInternalPath"></span>
+            <span class="ref-copy">&#10697;</span>
+          </div>
+          <div id="refExternal" class="ref-url" onclick="copyRef(this)" title="Kopieren">
+            <span class="ref-scheme">https://</span><span class="ref-host" id="refExternalHost"></span><span class="ref-path" id="refExternalPath"></span>
+            <span class="ref-copy">&#10697;</span>
+          </div>
+        </div>
         <label>Interne URL</label>
         <input id="modalInternal" type="text" placeholder="http://192.168.1.1:8080" />
         <label>Externe URL</label>
@@ -230,6 +241,26 @@
         portsRow.style.display = 'none';
       }
 
+      // HA base URL reference
+      const internalBase = (localStorage.getItem('internalBase') || `http://${window.location.hostname}:8123`).replace(/\/$/, '');
+      const externalBase = (localStorage.getItem('externalBase') || '').replace(/\/$/, '');
+      const ingressPath = `/hassio/ingress/${_currentSlug}`;
+
+      function fillRef(elHost, elPath, base, scheme) {
+        const hostPart = base.replace(/^https?:\/\//, '');
+        elHost.textContent = hostPart;
+        elPath.textContent = ingressPath;
+        elHost.closest('.ref-url').dataset.fullUrl = base + ingressPath;
+        elHost.closest('.ref-url').style.display = '';
+      }
+      fillRef(document.getElementById('refInternalHost'), document.getElementById('refInternalPath'), internalBase, 'http');
+      if (externalBase) {
+        fillRef(document.getElementById('refExternalHost'), document.getElementById('refExternalPath'), externalBase, 'https');
+        document.getElementById('refExternal').style.display = '';
+      } else {
+        document.getElementById('refExternal').style.display = 'none';
+      }
+
       // Highlight active card
       document.querySelectorAll('.card').forEach(c => c.classList.remove('editing'));
       card.classList.add('editing');
@@ -257,6 +288,17 @@
       applyVisibility();
       showToast('Gespeichert.');
       _currentSlug = null;
+    }
+
+    // ── Copy ref URL ─────────────────────────────────────────────
+    function copyRef(el) {
+      const url = el.dataset.fullUrl;
+      if (!url) return;
+      navigator.clipboard.writeText(url).then(() => {
+        const orig = el.querySelector('.ref-copy').textContent;
+        el.querySelector('.ref-copy').textContent = '✓';
+        setTimeout(() => el.querySelector('.ref-copy').textContent = orig, 1500);
+      });
     }
 
     // ── Refresh ──────────────────────────────────────────────────

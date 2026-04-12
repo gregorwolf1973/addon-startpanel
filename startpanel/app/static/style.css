@@ -257,6 +257,43 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
   gap: 10px;
 }
 
+.modal-ref {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 9px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 2px;
+}
+.ref-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.ref-url {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-family: monospace;
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+}
+.ref-url:hover { border-color: var(--accent); background: var(--surface-hover); }
+.ref-scheme { color: var(--text-muted); flex-shrink: 0; }
+.ref-host { color: var(--accent); font-weight: 600; }
+.ref-path { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.ref-copy { margin-left: auto; flex-shrink: 0; color: var(--text-muted); padding-left: 8px; }
+
 .modal-meta {
   font-size: 0.78rem;
   color: var(--text-muted);
