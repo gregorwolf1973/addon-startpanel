@@ -17,10 +17,12 @@ SUPERVISOR_URL = "http://supervisor"
 HEADERS = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
 PORT = 8099
 SETTINGS_FILE = "/data/settings.json"
+CUSTOM_ICON_DIR = "/data/custom_icons"
 
 log.info("=== Startpanel booting, SUPERVISOR_TOKEN present: %s ===", bool(SUPERVISOR_TOKEN))
 
 _icon_cache: dict[str, bytes] = {}
+_ha_urls: dict[str, str] = {}
 
 _FALLBACK_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -40,6 +42,19 @@ def save_settings(data: dict):
     os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
     with open(SETTINGS_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+# ── HA URLs ───────────────────────────────────────────────────────
+def get_ha_urls() -> dict:
+    global _ha_urls
+    if not _ha_urls:
+        data = supervisor_get("/core/info").get("data", {})
+        _ha_urls = {
+            "internal_url": data.get("internal_url", ""),
+            "external_url": data.get("external_url", ""),
+        }
+        log.info("HA URLs: internal=%s, external=%s", _ha_urls["internal_url"], _ha_urls["external_url"])
+    return _ha_urls
 
 
 # ── Supervisor API ────────────────────────────────────────────────
@@ -101,6 +116,9 @@ def build_addon_list() -> tuple[list, list]:
 
 
 def _addon_has_icon(slug: str) -> bool:
+    custom_path = os.path.join(CUSTOM_ICON_DIR, f"{slug}.png")
+    if os.path.isfile(custom_path):
+        return True
     try:
         r = requests.head(f"{SUPERVISOR_URL}/addons/{slug}/icon", headers=HEADERS, timeout=5)
         return r.status_code == 200
@@ -112,11 +130,18 @@ def _addon_has_icon(slug: str) -> bool:
 @app.route("/")
 def index():
     running, stopped = build_addon_list()
-    return render_template("index.html", running=running, stopped=stopped)
+    ha_urls = get_ha_urls()
+    return render_template("index.html", running=running, stopped=stopped, ha_urls=ha_urls)
 
 
 @app.route("/icon/<slug>")
 def icon(slug: str):
+    # Check custom icon first
+    custom_path = os.path.join(CUSTOM_ICON_DIR, f"{slug}.png")
+    if os.path.isfile(custom_path):
+        with open(custom_path, "rb") as f:
+            return Response(f.read(), mimetype="image/png")
+
     if slug in _icon_cache:
         return Response(_icon_cache[slug], mimetype="image/png")
     try:
@@ -129,11 +154,46 @@ def icon(slug: str):
     return Response(_FALLBACK_PNG, mimetype="image/png")
 
 
+@app.route("/api/icon/<slug>", methods=["POST"])
+def upload_icon(slug: str):
+    if "file" not in request.files:
+        return jsonify(ok=False, error="No file"), 400
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify(ok=False, error="Empty filename"), 400
+    os.makedirs(CUSTOM_ICON_DIR, exist_ok=True)
+    save_path = os.path.join(CUSTOM_ICON_DIR, f"{slug}.png")
+    file.save(save_path)
+    # Clear cached supervisor icon if any
+    _icon_cache.pop(slug, None)
+    log.info("Custom icon saved for %s", slug)
+    return jsonify(ok=True)
+
+
+@app.route("/api/icon/<slug>", methods=["DELETE"])
+def delete_icon(slug: str):
+    custom_path = os.path.join(CUSTOM_ICON_DIR, f"{slug}.png")
+    if os.path.isfile(custom_path):
+        os.remove(custom_path)
+        _icon_cache.pop(slug, None)
+        log.info("Custom icon removed for %s", slug)
+    return jsonify(ok=True)
+
+
+@app.route("/api/has-custom-icon/<slug>")
+def has_custom_icon(slug: str):
+    custom_path = os.path.join(CUSTOM_ICON_DIR, f"{slug}.png")
+    return jsonify(hasCustomIcon=os.path.isfile(custom_path))
+
+
 @app.route("/api/refresh")
 def api_refresh():
+    global _ha_urls
     _icon_cache.clear()
+    _ha_urls = {}
     running, stopped = build_addon_list()
-    return jsonify(running=running, stopped=stopped)
+    ha_urls = get_ha_urls()
+    return jsonify(running=running, stopped=stopped, ha_urls=ha_urls)
 
 
 @app.route("/api/settings", methods=["GET"])

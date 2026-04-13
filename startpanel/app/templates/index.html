@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,21 +19,21 @@
     <h1>Startpanel</h1>
     <div class="controls">
       <div class="url-toggle">
-        <button class="toggle-btn active" data-mode="internal" onclick="setMode('internal')">Intern</button>
-        <button class="toggle-btn" data-mode="external" onclick="setMode('external')">Extern</button>
+        <button class="toggle-btn active" data-mode="internal" onclick="setMode('internal')">Internal</button>
+        <button class="toggle-btn" data-mode="external" onclick="setMode('external')">External</button>
       </div>
-      <button id="editBtn" class="icon-btn" onclick="toggleEditMode()" title="Bearbeiten">&#9998;</button>
-      <button id="themeBtn" class="icon-btn" onclick="toggleTheme()" title="Theme">&#9790;</button>
-      <button class="icon-btn" onclick="refreshData()" title="Aktualisieren">&#8635;</button>
+      <button id="editBtn" class="icon-btn" onclick="toggleEditMode()" title="Edit">&#9998;</button>
+      <button id="settingsBtn" class="icon-btn" onclick="openSettingsModal()" title="Settings">&#9881;</button>
+      <button class="icon-btn" onclick="refreshData()" title="Refresh">&#8635;</button>
     </div>
   </header>
 
   <main id="main">
     {% if running %}
-    <section>
+    <section id="section-running">
       <h2 class="section-title">
         <span class="status-dot running"></span>
-        Laufend <span class="count">{{ running | length }}</span>
+        Running <span class="count">{{ running | length }}</span>
       </h2>
       <div class="grid" id="grid-running">
         {% for addon in running %}
@@ -64,11 +64,11 @@
     {% endif %}
 
     {% if stopped %}
-    {% if running %}<div class="separator"></div>{% endif %}
-    <section>
+    <div class="separator" id="section-separator"></div>
+    <section id="section-stopped">
       <h2 class="section-title">
         <span class="status-dot stopped"></span>
-        Installiert, nicht aktiv <span class="count">{{ stopped | length }}</span>
+        Installed, not active <span class="count">{{ stopped | length }}</span>
       </h2>
       <div class="grid" id="grid-stopped">
         {% for addon in stopped %}
@@ -103,25 +103,51 @@
   <div id="modalOverlay" class="modal-overlay hidden" onclick="closeModal(event)">
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-header">
-        <img id="modalIcon" src="" alt="" />
+        <div class="modal-icon-wrapper">
+          <img id="modalIcon" src="" alt="" />
+          <div class="modal-icon-actions" id="modalIconActions">
+            <label class="icon-upload-btn" title="Upload custom icon">
+              &#8679;
+              <input type="file" id="iconUpload" accept="image/*" style="display:none" onchange="uploadIcon(this)" />
+            </label>
+            <button class="icon-remove-btn" id="iconRemoveBtn" title="Remove custom icon" onclick="removeIcon()" style="display:none">&#10005;</button>
+          </div>
+        </div>
         <div>
           <div id="modalName" class="modal-title"></div>
           <div id="modalSlug" class="modal-slug"></div>
         </div>
       </div>
       <div class="modal-body">
+        <!-- Reference addresses -->
+        <label>Reference Addresses</label>
+        <div class="ref-addresses">
+          <div class="ref-row" id="refHaStandard">
+            <span class="ref-label">HA Standard</span>
+            <input type="text" readonly class="ref-input" id="refHaInput" onclick="this.select()" />
+          </div>
+          <div class="ref-row" id="refInternet">
+            <span class="ref-label">Internet + Port</span>
+            <input type="text" readonly class="ref-input" id="refInternetInput" onclick="this.select()" />
+          </div>
+          <div class="ref-row" id="refIngress">
+            <span class="ref-label">Ingress</span>
+            <input type="text" readonly class="ref-input" id="refIngressInput" onclick="this.select()" />
+          </div>
+        </div>
+
         <div class="modal-meta">
           <span class="meta-label">Slug:</span> <code id="modalSlugCode"></code>
           <span id="modalPortsRow" style="display:none">
-            &nbsp;·&nbsp;<span class="meta-label">Ports:</span> <code id="modalPortsCode"></code>
+            &nbsp;&middot;&nbsp;<span class="meta-label">Ports:</span> <code id="modalPortsCode"></code>
           </span>
         </div>
-        <label>Interne URL</label>
+        <label>Internal URL</label>
         <input id="modalInternal" type="text" placeholder="http://192.168.178.37:8123/hassio/ingress/..." />
-        <label>Externe URL</label>
-        <input id="modalExternal" type="text" placeholder="https://meine-domain.de/hassio/ingress/..." />
+        <label>External URL</label>
+        <input id="modalExternal" type="text" placeholder="https://my-domain.com/hassio/ingress/..." />
         <div class="modal-toggle-row">
-          <span>Addon ausblenden</span>
+          <span>Hide addon</span>
           <label class="switch">
             <input type="checkbox" id="modalHidden" />
             <span class="slider"></span>
@@ -129,8 +155,38 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button onclick="saveModal()">Speichern</button>
-        <button class="secondary" onclick="closeModal()">Abbrechen</button>
+        <button onclick="saveModal()">Save</button>
+        <button class="secondary" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsOverlay" class="modal-overlay hidden" onclick="closeSettingsModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Settings</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-toggle-row">
+          <span>Dark theme</span>
+          <label class="switch">
+            <input type="checkbox" id="settingsTheme" onchange="onThemeToggle(this.checked)" />
+            <span class="slider slider-theme"></span>
+          </label>
+        </div>
+        <div class="modal-toggle-row">
+          <span>Hide inactive addons</span>
+          <label class="switch">
+            <input type="checkbox" id="settingsHideInactive" onchange="onHideInactiveToggle(this.checked)" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeSettingsModal()">Close</button>
       </div>
     </div>
   </div>
@@ -138,8 +194,12 @@
   <div id="toast" class="toast hidden"></div>
 
   <script>
+    // ── HA URLs from server ──────────────────────────────────────
+    var haInternalUrl = {{ ha_urls.internal_url | tojson }};
+    var haExternalUrl = {{ ha_urls.external_url | tojson }};
+
     // ── Server-side settings ─────────────────────────────────────
-    var _settings = {};  // loaded from server on init
+    var _settings = {};
 
     function loadSettings() {
       return fetch('api/settings').then(function(r) { return r.json(); }).then(function(data) {
@@ -152,7 +212,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(_settings),
-      }).catch(function() { showToast('Fehler beim Speichern.'); });
+      }).catch(function() { showToast('Error saving.'); });
     }
 
     function getAddon(slug) { return (_settings.addons || {})[slug] || {}; }
@@ -164,7 +224,7 @@
     }
 
     function getGlobal(key, fallback) {
-      return (_settings.global || {})[key] || fallback;
+      return (_settings.global || {})[key] !== undefined ? (_settings.global || {})[key] : fallback;
     }
 
     function setGlobal(key, val) {
@@ -173,15 +233,16 @@
       persistSettings();
     }
 
-    // ── Theme (local only — UI preference) ───────────────────────
+    // ── Theme ────────────────────────────────────────────────────
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
       localStorage.setItem('theme', theme);
-      document.getElementById('themeBtn').textContent = theme === 'dark' ? '\u263E' : '\u2600';
     }
-    function toggleTheme() {
-      var cur = localStorage.getItem('theme') || 'dark';
-      applyTheme(cur === 'dark' ? 'light' : 'dark');
+
+    function onThemeToggle(isDark) {
+      var theme = isDark ? 'dark' : 'light';
+      applyTheme(theme);
+      setGlobal('theme', theme);
     }
 
     // ── Mode ─────────────────────────────────────────────────────
@@ -216,6 +277,15 @@
           card.classList.toggle('hidden-card', !!s.hidden);
         }
       });
+      applyHideInactive();
+    }
+
+    function applyHideInactive() {
+      var hide = getGlobal('hideInactive', false);
+      var sep = document.getElementById('section-separator');
+      var sec = document.getElementById('section-stopped');
+      if (sep) sep.style.display = hide ? 'none' : '';
+      if (sec) sec.style.display = hide ? 'none' : '';
     }
 
     // ── Card click ───────────────────────────────────────────────
@@ -228,14 +298,14 @@
         var url = currentMode === 'external'
           ? (s.externalUrl || s.internalUrl || buildIngressUrl(card))
           : (s.internalUrl || buildIngressUrl(card));
-        if (!url) { showToast('Keine URL — bitte im Bearbeitungsmodus eintragen.'); return; }
+        if (!url) { showToast('No URL — please set one in edit mode.'); return; }
         window.open(url, '_blank');
       }
     }
 
     function buildIngressUrl(card) {
       if (card.dataset.hasIngress !== 'true') return null;
-      var base = getGlobal('internalBase', 'http://' + window.location.hostname + ':8123');
+      var base = haInternalUrl || ('http://' + window.location.hostname + ':8123');
       return base.replace(/\/$/, '') + '/hassio/ingress/' + card.dataset.slug;
     }
 
@@ -250,14 +320,44 @@
       document.getElementById('modalName').textContent = name;
       document.getElementById('modalSlug').textContent = _currentSlug;
       document.getElementById('modalSlugCode').textContent = _currentSlug;
-      document.getElementById('modalIcon').src = 'icon/' + _currentSlug;
+      document.getElementById('modalIcon').src = 'icon/' + _currentSlug + '?t=' + Date.now();
       document.getElementById('modalInternal').value = s.internalUrl || '';
       document.getElementById('modalExternal').value = s.externalUrl || '';
       document.getElementById('modalHidden').checked = !!s.hidden;
 
-      // Ports reference
+      // Reference addresses
+      var intBase = haInternalUrl || ('http://' + window.location.hostname + ':8123');
+      var extBase = haExternalUrl || '';
       var ports = [];
       try { ports = JSON.parse(card.dataset.ports || '[]'); } catch(e) {}
+
+      // HA Standard address
+      var haStd = intBase.replace(/\/$/, '') + '/hassio/ingress/' + _currentSlug;
+      document.getElementById('refHaInput').value = haStd;
+
+      // Internet + Port
+      var refInternetRow = document.getElementById('refInternet');
+      if (extBase && ports.length) {
+        var extClean = extBase.replace(/\/$/, '').replace(/:\d+$/, '');
+        document.getElementById('refInternetInput').value = extClean + ':' + ports[0];
+        refInternetRow.style.display = '';
+      } else if (ports.length) {
+        document.getElementById('refInternetInput').value = window.location.hostname + ':' + ports[0];
+        refInternetRow.style.display = '';
+      } else {
+        refInternetRow.style.display = 'none';
+      }
+
+      // Ingress address
+      var refIngressRow = document.getElementById('refIngress');
+      if (card.dataset.hasIngress === 'true') {
+        document.getElementById('refIngressInput').value = '/hassio/ingress/' + _currentSlug;
+        refIngressRow.style.display = '';
+      } else {
+        refIngressRow.style.display = 'none';
+      }
+
+      // Ports reference
       var portsRow = document.getElementById('modalPortsRow');
       if (ports.length) {
         document.getElementById('modalPortsCode').textContent = ports.join(', ');
@@ -265,6 +365,11 @@
       } else {
         portsRow.style.display = 'none';
       }
+
+      // Custom icon buttons
+      fetch('api/has-custom-icon/' + _currentSlug).then(function(r) { return r.json(); }).then(function(data) {
+        document.getElementById('iconRemoveBtn').style.display = data.hasCustomIcon ? '' : 'none';
+      }).catch(function() {});
 
       // Highlight
       document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
@@ -295,16 +400,88 @@
       document.getElementById('modalOverlay').classList.add('hidden');
       document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
       applyVisibility();
-      showToast('Gespeichert.');
+      showToast('Saved.');
       _currentSlug = null;
+    }
+
+    // ── Custom icon upload ───────────────────────────────────────
+    function uploadIcon(input) {
+      if (!_currentSlug || !input.files.length) return;
+      var formData = new FormData();
+      formData.append('file', input.files[0]);
+      fetch('api/icon/' + _currentSlug, { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            document.getElementById('modalIcon').src = 'icon/' + _currentSlug + '?t=' + Date.now();
+            document.getElementById('iconRemoveBtn').style.display = '';
+            // Also refresh card icon
+            var card = document.querySelector('[data-slug="' + _currentSlug + '"]');
+            if (card) {
+              var img = card.querySelector('.card-icon img');
+              if (img) {
+                img.src = 'icon/' + _currentSlug + '?t=' + Date.now();
+                img.style.display = '';
+                var fb = card.querySelector('.icon-fallback');
+                if (fb) fb.style.display = 'none';
+              }
+            }
+            showToast('Icon uploaded.');
+          } else {
+            showToast('Upload failed.');
+          }
+        })
+        .catch(function() { showToast('Upload failed.'); });
+      input.value = '';
+    }
+
+    function removeIcon() {
+      if (!_currentSlug) return;
+      fetch('api/icon/' + _currentSlug, { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function() {
+          document.getElementById('modalIcon').src = 'icon/' + _currentSlug + '?t=' + Date.now();
+          document.getElementById('iconRemoveBtn').style.display = 'none';
+          var card = document.querySelector('[data-slug="' + _currentSlug + '"]');
+          if (card) {
+            var img = card.querySelector('.card-icon img');
+            if (img) img.src = 'icon/' + _currentSlug + '?t=' + Date.now();
+          }
+          showToast('Icon removed.');
+        })
+        .catch(function() { showToast('Error removing icon.'); });
+    }
+
+    // ── Settings Modal ───────────────────────────────────────────
+    function openSettingsModal() {
+      var theme = getGlobal('theme', localStorage.getItem('theme') || 'dark');
+      document.getElementById('settingsTheme').checked = (theme === 'dark');
+      document.getElementById('settingsHideInactive').checked = getGlobal('hideInactive', false);
+      document.getElementById('settingsOverlay').classList.remove('hidden');
+    }
+
+    function closeSettingsModal(event) {
+      if (event && event.target !== document.getElementById('settingsOverlay') && event.type === 'click') return;
+      document.getElementById('settingsOverlay').classList.add('hidden');
+    }
+
+    function onHideInactiveToggle(hide) {
+      setGlobal('hideInactive', hide);
+      applyHideInactive();
     }
 
     // ── Refresh ──────────────────────────────────────────────────
     function refreshData() {
       fetch('api/refresh')
         .then(function(r) { return r.json(); })
-        .then(function() { window.location.reload(); })
-        .catch(function() { showToast('Fehler beim Aktualisieren.'); });
+        .then(function(data) {
+          if (data.ha_urls) {
+            haInternalUrl = data.ha_urls.internal_url || haInternalUrl;
+            haExternalUrl = data.ha_urls.external_url || haExternalUrl;
+          }
+          window.location.reload();
+        })
+        .catch(function() { showToast('Error refreshing.'); });
     }
 
     // ── Toast ────────────────────────────────────────────────────
@@ -357,8 +534,11 @@
     // ── Init ─────────────────────────────────────────────────────
     applyTheme(localStorage.getItem('theme') || 'dark');
 
-    // Load settings from server, then apply
     loadSettings().then(function() {
+      // Apply theme from server settings
+      var savedTheme = getGlobal('theme', null);
+      if (savedTheme) applyTheme(savedTheme);
+
       currentMode = getGlobal('urlMode', 'internal');
       setMode(currentMode);
       applyOrder('grid-running');
