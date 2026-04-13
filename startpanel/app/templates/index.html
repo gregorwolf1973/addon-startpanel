@@ -63,6 +63,43 @@
     </section>
     {% endif %}
 
+    <!-- Custom cards section -->
+    <div class="separator" id="section-custom-separator" {% if not custom_cards %}style="display:none"{% endif %}></div>
+    <section id="section-custom" {% if not custom_cards %}style="display:none"{% endif %}>
+      <h2 class="section-title">
+        <span class="status-dot custom"></span>
+        Custom <span class="count" id="custom-count">{{ custom_cards | length }}</span>
+      </h2>
+      <div class="grid" id="grid-custom">
+        {% for card in custom_cards %}
+        <div class="card"
+             data-slug="{{ card.id }}"
+             data-custom="true"
+             data-url="{{ card.url }}"
+             onclick="cardClick(this)">
+          <div class="edit-badge">&#9998;</div>
+          <div class="card-icon">
+            <img src="icon/{{ card.id }}" alt="{{ card.name }}" loading="lazy"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+            <div class="icon-fallback" style="display:none">
+              {{ card.name[:2].upper() }}
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="card-name">{{ card.name }}</div>
+            <div class="card-version">Custom</div>
+          </div>
+        </div>
+        {% endfor %}
+        <div class="card add-card" onclick="openCustomCreateModal()">
+          <div class="add-card-icon">+</div>
+          <div class="card-body">
+            <div class="card-name">Add card</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     {% if stopped %}
     <div class="separator" id="section-separator"></div>
     <section id="section-stopped">
@@ -99,7 +136,7 @@
     {% endif %}
   </main>
 
-  <!-- Edit Modal -->
+  <!-- Addon Edit Modal -->
   <div id="modalOverlay" class="modal-overlay hidden" onclick="closeModal(event)">
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-header">
@@ -157,6 +194,45 @@
       <div class="modal-footer">
         <button onclick="saveModal()">Save</button>
         <button class="secondary" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Card Create/Edit Modal -->
+  <div id="customModalOverlay" class="modal-overlay hidden" onclick="closeCustomModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-icon-wrapper">
+          <img id="customModalIcon" src="" alt="" />
+          <div class="modal-icon-actions">
+            <label class="icon-upload-btn" title="Upload icon">
+              &#8679;
+              <input type="file" id="customIconUpload" accept="image/*" style="display:none" onchange="uploadCustomIcon(this)" />
+            </label>
+            <button class="icon-remove-btn" id="customIconRemoveBtn" title="Remove icon" onclick="removeCustomIcon()" style="display:none">&#10005;</button>
+          </div>
+        </div>
+        <div>
+          <div class="modal-title" id="customModalTitle">New Custom Card</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <label>Name</label>
+        <input id="customModalName" type="text" placeholder="e.g. Google, Router, NAS..." />
+        <label>URL</label>
+        <input id="customModalUrl" type="text" placeholder="http://google.de" />
+        <div class="modal-toggle-row" id="customHiddenRow" style="display:none">
+          <span>Hide card</span>
+          <label class="switch">
+            <input type="checkbox" id="customModalHidden" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="saveCustomModal()">Save</button>
+        <button class="secondary" id="customDeleteBtn" onclick="deleteCustomCard()" style="display:none">Delete</button>
+        <button class="secondary" onclick="closeCustomModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -263,12 +339,13 @@
       document.getElementById('editBtn').classList.toggle('active', editMode);
       setSortableEnabled(editMode);
       applyVisibility();
+      showCustomSection();
     }
 
     // ── Visibility ───────────────────────────────────────────────
     function applyVisibility() {
       var addons = _settings.addons || {};
-      document.querySelectorAll('.card').forEach(function(card) {
+      document.querySelectorAll('.card:not(.add-card)').forEach(function(card) {
         var s = addons[card.dataset.slug] || {};
         if (s.hidden && !editMode) {
           card.style.display = 'none';
@@ -288,8 +365,33 @@
       if (sec) sec.style.display = hide ? 'none' : '';
     }
 
+    // ── Custom section visibility ────────────────────────────────
+    function showCustomSection() {
+      var cards = (_settings.customCards || []);
+      var hasCards = cards.length > 0;
+      var sep = document.getElementById('section-custom-separator');
+      var sec = document.getElementById('section-custom');
+      // Show section if there are cards OR if in edit mode (to show the + button)
+      var show = hasCards || editMode;
+      if (sep) sep.style.display = show ? '' : 'none';
+      if (sec) sec.style.display = show ? '' : 'none';
+    }
+
     // ── Card click ───────────────────────────────────────────────
     function cardClick(card) {
+      if (card.classList.contains('add-card')) return;
+
+      if (card.dataset.custom === 'true') {
+        if (editMode) {
+          openCustomEditModal(card);
+        } else {
+          var url = card.dataset.url;
+          if (!url) { showToast('No URL set.'); return; }
+          window.open(url, '_blank');
+        }
+        return;
+      }
+
       if (editMode) {
         openModal(card);
       } else {
@@ -309,7 +411,7 @@
       return base.replace(/\/$/, '') + '/hassio/ingress/' + card.dataset.slug;
     }
 
-    // ── Modal ────────────────────────────────────────────────────
+    // ── Addon Modal ──────────────────────────────────────────────
     var _currentSlug = null;
 
     function openModal(card) {
@@ -331,11 +433,8 @@
       var ports = [];
       try { ports = JSON.parse(card.dataset.ports || '[]'); } catch(e) {}
 
-      // HA Standard address
-      var haStd = intBase.replace(/\/$/, '') + '/hassio/ingress/' + _currentSlug;
-      document.getElementById('refHaInput').value = haStd;
+      document.getElementById('refHaInput').value = intBase.replace(/\/$/, '') + '/hassio/ingress/' + _currentSlug;
 
-      // Internet + Port
       var refInternetRow = document.getElementById('refInternet');
       if (extBase && ports.length) {
         var extClean = extBase.replace(/\/$/, '').replace(/:\d+$/, '');
@@ -348,7 +447,6 @@
         refInternetRow.style.display = 'none';
       }
 
-      // Ingress address
       var refIngressRow = document.getElementById('refIngress');
       if (card.dataset.hasIngress === 'true') {
         document.getElementById('refIngressInput').value = '/hassio/ingress/' + _currentSlug;
@@ -357,7 +455,6 @@
         refIngressRow.style.display = 'none';
       }
 
-      // Ports reference
       var portsRow = document.getElementById('modalPortsRow');
       if (ports.length) {
         document.getElementById('modalPortsCode').textContent = ports.join(', ');
@@ -366,12 +463,10 @@
         portsRow.style.display = 'none';
       }
 
-      // Custom icon buttons
       fetch('api/has-custom-icon/' + _currentSlug).then(function(r) { return r.json(); }).then(function(data) {
         document.getElementById('iconRemoveBtn').style.display = data.hasCustomIcon ? '' : 'none';
       }).catch(function() {});
 
-      // Highlight
       document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
       card.classList.add('editing');
       document.getElementById('modalOverlay').classList.remove('hidden');
@@ -387,16 +482,13 @@
 
     function saveModal() {
       if (!_currentSlug) return;
-
       if (!_settings.addons) _settings.addons = {};
       _settings.addons[_currentSlug] = Object.assign(_settings.addons[_currentSlug] || {}, {
         internalUrl: document.getElementById('modalInternal').value.trim(),
         externalUrl: document.getElementById('modalExternal').value.trim(),
         hidden: document.getElementById('modalHidden').checked,
       });
-
       persistSettings();
-
       document.getElementById('modalOverlay').classList.add('hidden');
       document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
       applyVisibility();
@@ -404,7 +496,7 @@
       _currentSlug = null;
     }
 
-    // ── Custom icon upload ───────────────────────────────────────
+    // ── Custom icon upload (addon modal) ─────────────────────────
     function uploadIcon(input) {
       if (!_currentSlug || !input.files.length) return;
       var formData = new FormData();
@@ -415,21 +507,15 @@
           if (data.ok) {
             document.getElementById('modalIcon').src = 'icon/' + _currentSlug + '?t=' + Date.now();
             document.getElementById('iconRemoveBtn').style.display = '';
-            // Also refresh card icon
             var card = document.querySelector('[data-slug="' + _currentSlug + '"]');
             if (card) {
               var img = card.querySelector('.card-icon img');
-              if (img) {
-                img.src = 'icon/' + _currentSlug + '?t=' + Date.now();
-                img.style.display = '';
-                var fb = card.querySelector('.icon-fallback');
-                if (fb) fb.style.display = 'none';
-              }
+              if (img) { img.src = 'icon/' + _currentSlug + '?t=' + Date.now(); img.style.display = ''; }
+              var fb = card.querySelector('.icon-fallback');
+              if (fb) fb.style.display = 'none';
             }
             showToast('Icon uploaded.');
-          } else {
-            showToast('Upload failed.');
-          }
+          } else { showToast('Upload failed.'); }
         })
         .catch(function() { showToast('Upload failed.'); });
       input.value = '';
@@ -446,6 +532,192 @@
           if (card) {
             var img = card.querySelector('.card-icon img');
             if (img) img.src = 'icon/' + _currentSlug + '?t=' + Date.now();
+          }
+          showToast('Icon removed.');
+        })
+        .catch(function() { showToast('Error removing icon.'); });
+    }
+
+    // ── Custom Card Modal ────────────────────────────────────────
+    var _customEditId = null; // null = creating new, string = editing existing
+
+    function openCustomCreateModal() {
+      _customEditId = null;
+      _currentSlug = null;
+      document.getElementById('customModalTitle').textContent = 'New Custom Card';
+      document.getElementById('customModalName').value = '';
+      document.getElementById('customModalUrl').value = '';
+      document.getElementById('customModalHidden').checked = false;
+      document.getElementById('customHiddenRow').style.display = 'none';
+      document.getElementById('customDeleteBtn').style.display = 'none';
+      document.getElementById('customModalIcon').src = '';
+      document.getElementById('customIconRemoveBtn').style.display = 'none';
+      document.getElementById('customModalOverlay').classList.remove('hidden');
+      document.getElementById('customModalName').focus();
+    }
+
+    function openCustomEditModal(card) {
+      var id = card.dataset.slug;
+      _customEditId = id;
+      _currentSlug = id;
+      var cards = _settings.customCards || [];
+      var entry = null;
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].id === id) { entry = cards[i]; break; }
+      }
+      if (!entry) return;
+
+      document.getElementById('customModalTitle').textContent = 'Edit Custom Card';
+      document.getElementById('customModalName').value = entry.name || '';
+      document.getElementById('customModalUrl').value = entry.url || '';
+      var addonSettings = getAddon(id);
+      document.getElementById('customModalHidden').checked = !!addonSettings.hidden;
+      document.getElementById('customHiddenRow').style.display = '';
+      document.getElementById('customDeleteBtn').style.display = '';
+      document.getElementById('customModalIcon').src = 'icon/' + id + '?t=' + Date.now();
+
+      fetch('api/has-custom-icon/' + id).then(function(r) { return r.json(); }).then(function(data) {
+        document.getElementById('customIconRemoveBtn').style.display = data.hasCustomIcon ? '' : 'none';
+      }).catch(function() {});
+
+      document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
+      card.classList.add('editing');
+      document.getElementById('customModalOverlay').classList.remove('hidden');
+      document.getElementById('customModalName').focus();
+    }
+
+    function closeCustomModal(event) {
+      if (event && event.target !== document.getElementById('customModalOverlay') && event.type === 'click') return;
+      document.getElementById('customModalOverlay').classList.add('hidden');
+      document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
+      _customEditId = null;
+      _currentSlug = null;
+    }
+
+    function saveCustomModal() {
+      var name = document.getElementById('customModalName').value.trim();
+      var url = document.getElementById('customModalUrl').value.trim();
+      if (!name || !url) { showToast('Name and URL are required.'); return; }
+
+      if (!_settings.customCards) _settings.customCards = [];
+
+      if (_customEditId) {
+        // Update existing
+        for (var i = 0; i < _settings.customCards.length; i++) {
+          if (_settings.customCards[i].id === _customEditId) {
+            _settings.customCards[i].name = name;
+            _settings.customCards[i].url = url;
+            break;
+          }
+        }
+        // Update hidden state
+        setAddon(_customEditId, { hidden: document.getElementById('customModalHidden').checked });
+        // Update the card in DOM
+        var card = document.querySelector('[data-slug="' + _customEditId + '"]');
+        if (card) {
+          card.dataset.url = url;
+          card.querySelector('.card-name').textContent = name;
+        }
+      } else {
+        // Create new
+        var id = 'custom_' + Date.now();
+        _settings.customCards.push({ id: id, name: name, url: url });
+        // Create card element in DOM
+        var grid = document.getElementById('grid-custom');
+        var addCard = grid.querySelector('.add-card');
+        var div = document.createElement('div');
+        div.className = 'card';
+        div.setAttribute('data-slug', id);
+        div.setAttribute('data-custom', 'true');
+        div.setAttribute('data-url', url);
+        div.setAttribute('onclick', 'cardClick(this)');
+        div.innerHTML = '<div class="edit-badge">&#9998;</div>'
+          + '<div class="card-icon">'
+          + '<img src="icon/' + id + '" alt="' + name + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />'
+          + '<div class="icon-fallback">' + name.substring(0, 2).toUpperCase() + '</div>'
+          + '</div>'
+          + '<div class="card-body">'
+          + '<div class="card-name">' + name + '</div>'
+          + '<div class="card-version">Custom</div>'
+          + '</div>';
+        grid.insertBefore(div, addCard);
+        _currentSlug = id;
+      }
+
+      persistSettings();
+      document.getElementById('customModalOverlay').classList.add('hidden');
+      document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('editing'); });
+      updateCustomCount();
+      showCustomSection();
+      applyVisibility();
+      showToast('Saved.');
+      _customEditId = null;
+      _currentSlug = null;
+    }
+
+    function deleteCustomCard() {
+      if (!_customEditId) return;
+      // Remove from settings
+      _settings.customCards = (_settings.customCards || []).filter(function(c) { return c.id !== _customEditId; });
+      // Remove hidden state
+      if (_settings.addons) delete _settings.addons[_customEditId];
+      persistSettings();
+      // Remove from DOM
+      var card = document.querySelector('[data-slug="' + _customEditId + '"]');
+      if (card) card.remove();
+      // Delete custom icon if any
+      fetch('api/icon/' + _customEditId, { method: 'DELETE' }).catch(function() {});
+      document.getElementById('customModalOverlay').classList.add('hidden');
+      updateCustomCount();
+      showCustomSection();
+      showToast('Card deleted.');
+      _customEditId = null;
+      _currentSlug = null;
+    }
+
+    function updateCustomCount() {
+      var count = (_settings.customCards || []).length;
+      document.getElementById('custom-count').textContent = count;
+    }
+
+    // ── Custom card icon upload ──────────────────────────────────
+    function uploadCustomIcon(input) {
+      var slug = _customEditId || _currentSlug;
+      if (!slug || !input.files.length) return;
+      var formData = new FormData();
+      formData.append('file', input.files[0]);
+      fetch('api/icon/' + slug, { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            document.getElementById('customModalIcon').src = 'icon/' + slug + '?t=' + Date.now();
+            document.getElementById('customIconRemoveBtn').style.display = '';
+            var card = document.querySelector('[data-slug="' + slug + '"]');
+            if (card) {
+              var img = card.querySelector('.card-icon img');
+              if (img) { img.src = 'icon/' + slug + '?t=' + Date.now(); img.style.display = ''; }
+              var fb = card.querySelector('.icon-fallback');
+              if (fb) fb.style.display = 'none';
+            }
+            showToast('Icon uploaded.');
+          } else { showToast('Upload failed.'); }
+        })
+        .catch(function() { showToast('Upload failed.'); });
+      input.value = '';
+    }
+
+    function removeCustomIcon() {
+      var slug = _customEditId || _currentSlug;
+      if (!slug) return;
+      fetch('api/icon/' + slug, { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function() {
+          document.getElementById('customModalIcon').src = 'icon/' + slug + '?t=' + Date.now();
+          document.getElementById('customIconRemoveBtn').style.display = 'none';
+          var card = document.querySelector('[data-slug="' + slug + '"]');
+          if (card) {
+            var img = card.querySelector('.card-icon img');
+            if (img) img.src = 'icon/' + slug + '?t=' + Date.now();
           }
           showToast('Icon removed.');
         })
@@ -496,7 +768,7 @@
     function saveOrder(gridId) {
       var el = document.getElementById(gridId);
       if (!el) return;
-      var order = Array.from(el.querySelectorAll('.card')).map(function(c) { return c.dataset.slug; });
+      var order = Array.from(el.querySelectorAll('.card:not(.add-card)')).map(function(c) { return c.dataset.slug; });
       if (!_settings.order) _settings.order = {};
       _settings.order[gridId] = order;
       persistSettings();
@@ -510,6 +782,11 @@
         var card = el.querySelector('[data-slug="' + slug + '"]');
         if (card) el.appendChild(card);
       });
+      // Ensure add-card stays at the end for custom grid
+      if (gridId === 'grid-custom') {
+        var addCard = el.querySelector('.add-card');
+        if (addCard) el.appendChild(addCard);
+      }
     }
     function initSortable(gridId) {
       var el = document.getElementById(gridId);
@@ -519,11 +796,12 @@
         ghostClass: 'card-ghost',
         chosenClass: 'card-chosen',
         disabled: true,
+        filter: '.add-card',
         onEnd: function() { saveOrder(gridId); },
       });
     }
     function setSortableEnabled(enabled) {
-      ['grid-running', 'grid-stopped'].forEach(function(id) {
+      ['grid-running', 'grid-custom', 'grid-stopped'].forEach(function(id) {
         var el = document.getElementById(id);
         if (!el) return;
         var s = Sortable.get(el);
@@ -535,16 +813,18 @@
     applyTheme(localStorage.getItem('theme') || 'dark');
 
     loadSettings().then(function() {
-      // Apply theme from server settings
       var savedTheme = getGlobal('theme', null);
       if (savedTheme) applyTheme(savedTheme);
 
       currentMode = getGlobal('urlMode', 'internal');
       setMode(currentMode);
       applyOrder('grid-running');
+      applyOrder('grid-custom');
       applyOrder('grid-stopped');
       applyVisibility();
+      showCustomSection();
       initSortable('grid-running');
+      initSortable('grid-custom');
       initSortable('grid-stopped');
     });
   </script>

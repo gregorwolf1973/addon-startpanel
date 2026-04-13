@@ -131,7 +131,9 @@ def _addon_has_icon(slug: str) -> bool:
 def index():
     running, stopped = build_addon_list()
     ha_urls = get_ha_urls()
-    return render_template("index.html", running=running, stopped=stopped, ha_urls=ha_urls)
+    settings = load_settings()
+    custom_cards = settings.get("customCards", [])
+    return render_template("index.html", running=running, stopped=stopped, ha_urls=ha_urls, custom_cards=custom_cards)
 
 
 @app.route("/icon/<slug>")
@@ -193,7 +195,9 @@ def api_refresh():
     _ha_urls = {}
     running, stopped = build_addon_list()
     ha_urls = get_ha_urls()
-    return jsonify(running=running, stopped=stopped, ha_urls=ha_urls)
+    settings = load_settings()
+    custom_cards = settings.get("customCards", [])
+    return jsonify(running=running, stopped=stopped, ha_urls=ha_urls, customCards=custom_cards)
 
 
 @app.route("/api/settings", methods=["GET"])
