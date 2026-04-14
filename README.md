@@ -6,6 +6,8 @@
 
 A Home Assistant addon that shows all installed addons as a visual dashboard with icons and direct links.
 
+<img width="1891" height="911" alt="image" src="https://github.com/user-attachments/assets/6712d561-ce42-43b7-919b-1bc6748a6cf9" />
+
 ---
 
 ## 🇩🇪 Deutsch
