@@ -23,10 +23,13 @@ Startpanel zeigt alle installierten Home Assistant Addons auf einer Übersichtss
 
 ### Funktionen
 
+- **Automatische Erkennung** – Host-IP, interne/externe HA-URL, Ingress und freigegebene Ports jedes Addons werden selbständig ermittelt und als interne/externe Adresse hinterlegt
+- **Neue Addons werden erkannt** – Installierte, entfernte oder gestartete Addons erscheinen ohne Zutun (Hintergrund-Abgleich alle 60 s)
 - **Intern/Extern Umschalter** – Wähle ob Links intern oder extern geöffnet werden sollen
-- **Bearbeitungsmodus (✎)** – Eigene URLs pro Addon eintragen, Addons ausblenden
-- **Referenz-URLs** – Ingress-Adressen werden angezeigt und können per Klick kopiert werden
-- **Dauerhaft gespeichert** – Alle Einstellungen bleiben im Browser erhalten
+- **Bearbeitungsmodus (✎)** – Erkannte Adressen pro Addon manuell überschreiben (Badge *auto* / *manual*, ↺ setzt zurück), Addons ausblenden
+- **Host-Overrides** – Host-IP und externe Basis-URL in den Einstellungen manuell festlegen
+- **Eigene Karten** – Beliebige Links mit Name, URL und Icon hinzufügen
+- **Dauerhaft gespeichert** – Alle Einstellungen liegen serverseitig in `/data/settings.json`
 
 ### Installation
 
@@ -49,10 +52,13 @@ Startpanel displays all installed Home Assistant addons on a visual overview pag
 
 ### Features
 
+- **Auto-detection** – Host IP, internal/external HA URL, ingress and exposed ports of every addon are detected automatically and stored as internal/external address
+- **New addons are picked up** – Installed, removed, started or stopped addons show up on their own (background sync every 60 s)
 - **Internal/External toggle** – Choose whether links open via internal or external address
-- **Edit mode (✎)** – Enter custom URLs per addon, hide addons from the panel
-- **Reference URLs** – Ingress addresses are shown and can be copied with one click
-- **Persistent settings** – All settings are saved in the browser (localStorage)
+- **Edit mode (✎)** – Override the detected addresses per addon (badge *auto* / *manual*, ↺ resets), hide addons from the panel
+- **Host overrides** – Set host IP and external base URL manually in the settings
+- **Custom cards** – Add any link with name, URL and icon
+- **Persistent settings** – Everything is stored server-side in `/data/settings.json`
 
 ### Installation
 
@@ -62,11 +68,11 @@ Startpanel displays all installed Home Assistant addons on a visual overview pag
 
 ### First-time setup
 
-After starting, click the **⚙ gear button** to enter your base URLs:
-- **Internal**: e.g. `http://192.168.178.37:8123`
-- **External**: e.g. `https://your-domain.duckdns.org`
+Nothing to configure – host IP and HA URLs are detected from the Supervisor. If the detection does not match your setup, click the **⚙ gear button** and override:
+- **Internal host / IP**: e.g. `192.168.178.37`
+- **External base URL**: e.g. `https://your-domain.duckdns.org` (defaults to the external URL configured in HA)
 
-Then use the **✎ edit button** to configure individual addon URLs if needed.
+Then use the **✎ edit button** to adjust individual addon URLs if needed.
 
 ---
 

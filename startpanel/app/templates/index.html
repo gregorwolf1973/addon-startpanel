@@ -156,33 +156,55 @@
         </div>
       </div>
       <div class="modal-body">
-        <!-- Reference addresses -->
-        <label>Reference Addresses</label>
+        <!-- Detected addresses (click "use" to copy into the field below) -->
+        <label>Detected Addresses</label>
         <div class="ref-addresses">
-          <div class="ref-row" id="refHaStandard">
-            <span class="ref-label">HA Standard</span>
-            <input type="text" readonly class="ref-input" id="refHaInput" onclick="this.select()" />
+          <div class="ref-row" id="refIngressInternal">
+            <span class="ref-label">Ingress internal</span>
+            <input type="text" readonly class="ref-input" id="refIngressInternalInput" onclick="this.select()" />
+            <button type="button" class="ref-use" onclick="useDetected('internal', 'ingressInternal')" title="Use as internal URL">&rarr; Int</button>
           </div>
-          <div class="ref-row" id="refInternet">
-            <span class="ref-label">Internet + Port</span>
-            <input type="text" readonly class="ref-input" id="refInternetInput" onclick="this.select()" />
+          <div class="ref-row" id="refPortInternal">
+            <span class="ref-label">IP + Port</span>
+            <input type="text" readonly class="ref-input" id="refPortInternalInput" onclick="this.select()" />
+            <button type="button" class="ref-use" onclick="useDetected('internal', 'portInternal')" title="Use as internal URL">&rarr; Int</button>
           </div>
-          <div class="ref-row" id="refIngress">
-            <span class="ref-label">Ingress</span>
-            <input type="text" readonly class="ref-input" id="refIngressInput" onclick="this.select()" />
+          <div class="ref-row" id="refIngressExternal">
+            <span class="ref-label">Ingress external</span>
+            <input type="text" readonly class="ref-input" id="refIngressExternalInput" onclick="this.select()" />
+            <button type="button" class="ref-use" onclick="useDetected('external', 'ingressExternal')" title="Use as external URL">&rarr; Ext</button>
+          </div>
+          <div class="ref-row" id="refPortExternal">
+            <span class="ref-label">Domain + Port</span>
+            <input type="text" readonly class="ref-input" id="refPortExternalInput" onclick="this.select()" />
+            <button type="button" class="ref-use" onclick="useDetected('external', 'portExternal')" title="Use as external URL">&rarr; Ext</button>
+          </div>
+          <div class="ref-row ref-empty" id="refNone" style="display:none">
+            <span class="ref-label">&nbsp;</span>
+            <span class="ref-hint">Nothing detected – no ingress and no exposed port.</span>
           </div>
         </div>
 
         <div class="modal-meta">
           <span class="meta-label">Slug:</span> <code id="modalSlugCode"></code>
+          <span id="modalHostRow" style="display:none">
+            &nbsp;&middot;&nbsp;<span class="meta-label">Host:</span> <code id="modalHostCode"></code>
+          </span>
           <span id="modalPortsRow" style="display:none">
             &nbsp;&middot;&nbsp;<span class="meta-label">Ports:</span> <code id="modalPortsCode"></code>
           </span>
         </div>
-        <label>Internal URL</label>
-        <input id="modalInternal" type="text" placeholder="http://192.168.178.37:8123/hassio/ingress/..." />
-        <label>External URL</label>
-        <input id="modalExternal" type="text" placeholder="https://my-domain.com/hassio/ingress/..." />
+        <label>Internal URL <span class="auto-badge" id="internalBadge">auto</span></label>
+        <div class="input-row">
+          <input id="modalInternal" type="text" placeholder="http://192.168.178.37:8123/hassio/ingress/..." oninput="updateBadge('internal')" />
+          <button type="button" class="reset-btn" id="internalReset" onclick="resetField('internal')" title="Reset to detected value">&#8635;</button>
+        </div>
+        <label>External URL <span class="auto-badge" id="externalBadge">auto</span></label>
+        <div class="input-row">
+          <input id="modalExternal" type="text" placeholder="https://my-domain.com/hassio/ingress/..." oninput="updateBadge('external')" />
+          <button type="button" class="reset-btn" id="externalReset" onclick="resetField('external')" title="Reset to detected value">&#8635;</button>
+        </div>
+        <div class="modal-hint">Fields are pre-filled with the detected address. Edit to override – leave empty to always follow auto-detection.</div>
         <div class="modal-toggle-row">
           <span>Hide addon</span>
           <label class="switch">
@@ -260,6 +282,12 @@
             <span class="slider"></span>
           </label>
         </div>
+
+        <label>Internal host / IP <span class="auto-badge" id="settingsInternalHostBadge">auto</span></label>
+        <input id="settingsInternalHost" type="text" placeholder="auto" oninput="updateHostBadge('InternalHost')" onchange="onHostChange()" />
+        <label>External base URL <span class="auto-badge" id="settingsExternalBaseBadge">auto</span></label>
+        <input id="settingsExternalBase" type="text" placeholder="auto" oninput="updateHostBadge('ExternalBase')" onchange="onHostChange()" />
+        <div class="modal-hint">Detected from Home Assistant: <code id="settingsDetectedHosts"></code>. Leave empty to use the detected values; detected addon URLs are re-derived from these.</div>
       </div>
       <div class="modal-footer">
         <button onclick="closeSettingsModal()">Close</button>
@@ -270,9 +298,11 @@
   <div id="toast" class="toast hidden"></div>
 
   <script>
-    // ── HA URLs from server ──────────────────────────────────────
-    var haInternalUrl = {{ ha_urls.internal_url | tojson }};
-    var haExternalUrl = {{ ha_urls.external_url | tojson }};
+    // ── Host info + addon snapshot from server ───────────────────
+    var hostInfo = {{ host_info | tojson }};
+    var haInternalUrl = hostInfo.internal_url || '';
+    var haExternalUrl = hostInfo.external_url || '';
+    var _renderedSnapshot = {{ snapshot | tojson }};
 
     // ── Server-side settings ─────────────────────────────────────
     var _settings = {};
@@ -283,15 +313,38 @@
       }).catch(function() { _settings = {}; });
     }
 
+    // Server owns the "detected" blocks – pull them back after every save
+    function mergeDetected(serverSettings) {
+      var srv = (serverSettings && serverSettings.addons) || {};
+      if (!_settings.addons) _settings.addons = {};
+      Object.keys(srv).forEach(function(slug) {
+        if (!_settings.addons[slug]) _settings.addons[slug] = {};
+        if (srv[slug].detected) _settings.addons[slug].detected = srv[slug].detected;
+        if (srv[slug].firstSeen) _settings.addons[slug].firstSeen = srv[slug].firstSeen;
+      });
+    }
+
     function persistSettings() {
-      fetch('api/settings', {
+      return fetch('api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(_settings),
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data && data.settings) mergeDetected(data.settings);
+        return data;
       }).catch(function() { showToast('Error saving.'); });
     }
 
     function getAddon(slug) { return (_settings.addons || {})[slug] || {}; }
+    function getDetected(slug) { return getAddon(slug).detected || {}; }
+
+    // Manual URL wins; otherwise the auto-detected one
+    function effectiveUrl(slug, mode) {
+      var s = getAddon(slug), d = getDetected(slug);
+      var internal = s.internalUrl || d.internalUrl || '';
+      var external = s.externalUrl || d.externalUrl || '';
+      return mode === 'external' ? (external || internal) : internal;
+    }
 
     function setAddon(slug, data) {
       if (!_settings.addons) _settings.addons = {};
@@ -396,10 +449,7 @@
         openModal(card);
       } else {
         var slug = card.dataset.slug;
-        var s = getAddon(slug);
-        var url = currentMode === 'external'
-          ? (s.externalUrl || s.internalUrl || buildIngressUrl(card))
-          : (s.internalUrl || buildIngressUrl(card));
+        var url = effectiveUrl(slug, currentMode) || buildIngressUrl(card);
         if (!url) { showToast('No URL — please set one in edit mode.'); return; }
         window.open(url, '_blank');
       }
@@ -423,41 +473,48 @@
       document.getElementById('modalSlug').textContent = _currentSlug;
       document.getElementById('modalSlugCode').textContent = _currentSlug;
       document.getElementById('modalIcon').src = 'icon/' + _currentSlug + '?t=' + Date.now();
-      document.getElementById('modalInternal').value = s.internalUrl || '';
-      document.getElementById('modalExternal').value = s.externalUrl || '';
       document.getElementById('modalHidden').checked = !!s.hidden;
 
-      // Reference addresses
-      var intBase = haInternalUrl || ('http://' + window.location.hostname + ':8123');
-      var extBase = haExternalUrl || '';
-      var ports = [];
-      try { ports = JSON.parse(card.dataset.ports || '[]'); } catch(e) {}
+      // Detected addresses (from server-side detection, stored in settings)
+      var d = getDetected(_currentSlug);
+      var c = d.candidates || {};
+      var ports = d.ports || [];
+      if (!ports.length) { try { ports = JSON.parse(card.dataset.ports || '[]'); } catch(e) {} }
 
-      document.getElementById('refHaInput').value = intBase.replace(/\/$/, '') + '/hassio/ingress/' + _currentSlug;
+      var anyCandidate = false;
+      [['ingressInternal', 'refIngressInternal', 'refIngressInternalInput'],
+       ['portInternal', 'refPortInternal', 'refPortInternalInput'],
+       ['ingressExternal', 'refIngressExternal', 'refIngressExternalInput'],
+       ['portExternal', 'refPortExternal', 'refPortExternalInput']].forEach(function(row) {
+        var val = c[row[0]] || '';
+        document.getElementById(row[1]).style.display = val ? '' : 'none';
+        document.getElementById(row[2]).value = val;
+        if (val) anyCandidate = true;
+      });
+      document.getElementById('refNone').style.display = anyCandidate ? 'none' : '';
 
-      var refInternetRow = document.getElementById('refInternet');
-      if (extBase && ports.length) {
-        var extClean = extBase.replace(/\/$/, '').replace(/:\d+$/, '');
-        document.getElementById('refInternetInput').value = extClean + ':' + ports[0];
-        refInternetRow.style.display = '';
-      } else if (ports.length) {
-        document.getElementById('refInternetInput').value = window.location.hostname + ':' + ports[0];
-        refInternetRow.style.display = '';
+      // Fields show the effective URL: manual override if set, else detected
+      document.getElementById('modalInternal').value = s.internalUrl || d.internalUrl || '';
+      document.getElementById('modalExternal').value = s.externalUrl || d.externalUrl || '';
+      document.getElementById('modalInternal').placeholder = d.internalUrl || 'http://192.168.178.37:8123/hassio/ingress/...';
+      document.getElementById('modalExternal').placeholder = d.externalUrl || 'https://my-domain.com/hassio/ingress/...';
+      updateBadge('internal');
+      updateBadge('external');
+
+      var hostRow = document.getElementById('modalHostRow');
+      if (d.hostIp) {
+        document.getElementById('modalHostCode').textContent = d.hostIp;
+        hostRow.style.display = '';
       } else {
-        refInternetRow.style.display = 'none';
-      }
-
-      var refIngressRow = document.getElementById('refIngress');
-      if (card.dataset.hasIngress === 'true') {
-        document.getElementById('refIngressInput').value = '/hassio/ingress/' + _currentSlug;
-        refIngressRow.style.display = '';
-      } else {
-        refIngressRow.style.display = 'none';
+        hostRow.style.display = 'none';
       }
 
       var portsRow = document.getElementById('modalPortsRow');
       if (ports.length) {
-        document.getElementById('modalPortsCode').textContent = ports.join(', ');
+        var portText = (d.portMap && d.portMap.length)
+          ? d.portMap.map(function(p) { return p.host + ' ← ' + p.container; }).join(', ')
+          : ports.join(', ');
+        document.getElementById('modalPortsCode').textContent = portText;
         portsRow.style.display = '';
       } else {
         portsRow.style.display = 'none';
@@ -480,12 +537,47 @@
       _currentSlug = null;
     }
 
+    // Auto / manual badge per URL field: "auto" when the field equals the detected value
+    function updateBadge(which) {
+      if (!_currentSlug) return;
+      var d = getDetected(_currentSlug);
+      var detected = (which === 'internal' ? d.internalUrl : d.externalUrl) || '';
+      var val = document.getElementById(which === 'internal' ? 'modalInternal' : 'modalExternal').value.trim();
+      var isAuto = (val === '' || val === detected);
+      var badge = document.getElementById(which + 'Badge');
+      badge.textContent = isAuto ? 'auto' : 'manual';
+      badge.classList.toggle('manual', !isAuto);
+      document.getElementById(which + 'Reset').style.display = (!isAuto && detected) ? '' : 'none';
+    }
+
+    function resetField(which) {
+      if (!_currentSlug) return;
+      var d = getDetected(_currentSlug);
+      document.getElementById(which === 'internal' ? 'modalInternal' : 'modalExternal').value =
+        (which === 'internal' ? d.internalUrl : d.externalUrl) || '';
+      updateBadge(which);
+    }
+
+    function useDetected(which, candidateKey) {
+      if (!_currentSlug) return;
+      var c = getDetected(_currentSlug).candidates || {};
+      if (!c[candidateKey]) return;
+      var input = document.getElementById(which === 'internal' ? 'modalInternal' : 'modalExternal');
+      input.value = c[candidateKey];
+      updateBadge(which);
+      input.focus();
+    }
+
     function saveModal() {
       if (!_currentSlug) return;
       if (!_settings.addons) _settings.addons = {};
+      var d = getDetected(_currentSlug);
+      var internalVal = document.getElementById('modalInternal').value.trim();
+      var externalVal = document.getElementById('modalExternal').value.trim();
+      // Only store a value when it differs from the detected one – empty = follow auto-detection
       _settings.addons[_currentSlug] = Object.assign(_settings.addons[_currentSlug] || {}, {
-        internalUrl: document.getElementById('modalInternal').value.trim(),
-        externalUrl: document.getElementById('modalExternal').value.trim(),
+        internalUrl: internalVal === (d.internalUrl || '') ? '' : internalVal,
+        externalUrl: externalVal === (d.externalUrl || '') ? '' : externalVal,
         hidden: document.getElementById('modalHidden').checked,
       });
       persistSettings();
@@ -729,7 +821,39 @@
       var theme = getGlobal('theme', localStorage.getItem('theme') || 'dark');
       document.getElementById('settingsTheme').checked = (theme === 'dark');
       document.getElementById('settingsHideInactive').checked = getGlobal('hideInactive', false);
+
+      var hostIn = document.getElementById('settingsInternalHost');
+      var extIn = document.getElementById('settingsExternalBase');
+      hostIn.value = getGlobal('internalHost', '');
+      extIn.value = getGlobal('externalBase', '');
+      hostIn.placeholder = hostInfo.host_ip || 'auto';
+      extIn.placeholder = hostInfo.external_url || 'auto (no external URL configured in HA)';
+      document.getElementById('settingsDetectedHosts').textContent =
+        'IP ' + (hostInfo.host_ip || '?') + ' · ' + (hostInfo.internal_url || '?') + ' · ' + (hostInfo.external_url || 'no external URL');
+      updateHostBadge('InternalHost');
+      updateHostBadge('ExternalBase');
       document.getElementById('settingsOverlay').classList.remove('hidden');
+    }
+
+    function updateHostBadge(which) {
+      var val = document.getElementById('settings' + which).value.trim();
+      var badge = document.getElementById('settings' + which + 'Badge');
+      badge.textContent = val ? 'manual' : 'auto';
+      badge.classList.toggle('manual', !!val);
+    }
+
+    var _hostSaveTimer = null;
+    function onHostChange() {
+      if (!_settings.global) _settings.global = {};
+      _settings.global.internalHost = document.getElementById('settingsInternalHost').value.trim();
+      _settings.global.externalBase = document.getElementById('settingsExternalBase').value.trim();
+      clearTimeout(_hostSaveTimer);
+      _hostSaveTimer = setTimeout(function() {
+        // Server re-derives every detected addon URL from the new hosts and sends them back
+        persistSettings().then(function(data) {
+          if (data && data.ok) showToast('Addresses updated.');
+        });
+      }, 300);
     }
 
     function closeSettingsModal(event) {
@@ -744,17 +868,55 @@
 
     // ── Refresh ──────────────────────────────────────────────────
     function refreshData() {
+      showToast('Refreshing…');
       fetch('api/refresh')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          if (data.ha_urls) {
-            haInternalUrl = data.ha_urls.internal_url || haInternalUrl;
-            haExternalUrl = data.ha_urls.external_url || haExternalUrl;
-          }
+          if (data.host_info) hostInfo = data.host_info;
           window.location.reload();
         })
         .catch(function() { showToast('Error refreshing.'); });
     }
+
+    // ── Auto-detect new / removed / changed addons ───────────────
+    var POLL_INTERVAL = 30000;
+
+    function anyModalOpen() {
+      return ['modalOverlay', 'customModalOverlay', 'settingsOverlay'].some(function(id) {
+        return !document.getElementById(id).classList.contains('hidden');
+      });
+    }
+
+    function snapshotKey(list) {
+      return list.map(function(e) { return e.slug + ':' + e.state; }).sort().join('|');
+    }
+
+    function pollAddons() {
+      if (document.hidden || anyModalOpen() || editMode) return;
+      fetch('api/addons')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var snap = data.snapshot || [];
+          if (!snap.length || snapshotKey(snap) === snapshotKey(_renderedSnapshot)) return;
+
+          var known = {};
+          _renderedSnapshot.forEach(function(e) { known[e.slug] = true; });
+          var added = snap.filter(function(e) { return !known[e.slug]; }).map(function(e) { return e.name; });
+          var current = {};
+          snap.forEach(function(e) { current[e.slug] = true; });
+          var removed = _renderedSnapshot.filter(function(e) { return !current[e.slug]; }).map(function(e) { return e.name; });
+
+          var msg = added.length ? 'New addon detected: ' + added.join(', ')
+                  : removed.length ? 'Addon removed: ' + removed.join(', ')
+                  : 'Addon status changed – updating…';
+          showToast(msg);
+          _renderedSnapshot = snap;
+          setTimeout(function() { if (!anyModalOpen() && !editMode) window.location.reload(); }, 1500);
+        })
+        .catch(function() {});
+    }
+    setInterval(pollAddons, POLL_INTERVAL);
+    document.addEventListener('visibilitychange', function() { if (!document.hidden) pollAddons(); });
 
     // ── Toast ────────────────────────────────────────────────────
     function showToast(msg) {

@@ -11,34 +11,42 @@ Startpanel ist ein Home Assistant Addon, das alle installierten Addons auf einer
 3. Addon **Startpanel** installieren und starten
 4. Das Panel erscheint automatisch in der Seitenleiste
 
-## Erste Schritte
+## Automatische Erkennung
 
-Nach dem ersten Start erscheint ein Hinweis, die interne Basis-URL einzutragen.
+Startpanel ermittelt beim Start und danach alle 60 Sekunden selbständig über die Supervisor-API:
 
-### Intern / Extern Umschalter
+- **Host-IP** des Home-Assistant-Rechners (primäres Netzwerk-Interface) sowie die in HA konfigurierte **interne** und **externe URL**
+- pro Addon: **Ingress** (ja/nein) und alle **freigegebenen Ports** (Host-Port ← Container-Port)
 
-- **Intern**: Öffnet Addons über die interne HA-Adresse (z. B. `http://192.168.178.37:8123`)
-- **Extern**: Öffnet Addons über die externe Adresse (z. B. `https://meine-domain.duckdns.org`)
+Daraus werden für jedes Addon eine interne und eine externe Adresse abgeleitet und in `/data/settings.json` hinterlegt:
+
+| Typ | Regel |
+|-----|-------|
+| Intern | Ingress über die interne HA-Basis, sonst `http://{Host-IP}:{erster Port}` |
+| Extern | Ingress über die externe HA-Basis, sonst `https://{Domain}:{erster Port}` |
+
+### Neue Addons
+
+Neu installierte, entfernte oder gestartete/gestoppte Addons werden automatisch erkannt: Die Seite fragt alle 30 Sekunden nach und lädt sich mit einem Hinweis („New addon detected: …“) neu – aber nicht, solange ein Bearbeitungs-Dialog geöffnet oder der Bearbeitungsmodus aktiv ist.
+
+## Intern / Extern Umschalter
+
+- **Intern**: Öffnet Addons über die interne Adresse (Host-IP / interne HA-URL)
+- **Extern**: Öffnet Addons über die externe Adresse (externe HA-URL)
 
 ## Bearbeitungsmodus (✎)
 
 Der Stift-Button in der Kopfzeile aktiviert den Bearbeitungsmodus (Button leuchtet orange). Im Bearbeitungsmodus:
 
 - **Klick auf ein Addon-Icon** öffnet das Bearbeitungs-Modal
-- Dort können eingetragen werden:
-  - **Interne URL**: Direkte Adresse für das Addon (z. B. `http://192.168.178.37:8080`)
-  - **Externe URL**: Externe Adresse (z. B. `https://meine-domain.de:8080`)
-  - **Addon ausblenden**: Blendet das Icon im normalen Modus aus
-- Die **HA Adressen (Referenz)**-Zeilen zeigen die automatisch ermittelte Ingress-URL – ein Klick kopiert die vollständige URL in die Zwischenablage
-
-### URL-Logik
-
-| Situation | Verwendete URL |
-|-----------|---------------|
-| Eigene interne URL eingetragen | Eingetragene interne URL |
-| Nur Ingress verfügbar | `{Interne Basis}/hassio/ingress/{slug}` |
-| Externer Modus, externe URL eingetragen | Eingetragene externe URL |
-| Externer Modus, nur Ingress | `{Externe Basis}/hassio/ingress/{slug}` |
+- **Detected Addresses** zeigt alle erkannten Varianten (Ingress intern, IP + Port, Ingress extern, Domain + Port). Ein Klick auf **→ Int** / **→ Ext** übernimmt die Variante in das jeweilige Feld
+- **Interne URL / Externe URL** sind mit der erkannten Adresse vorbelegt und können frei bearbeitet werden:
+  - Badge **auto** (grün): Feld entspricht der Erkennung und folgt ihr auch bei Änderungen (z. B. neuer Port)
+  - Badge **manual** (orange): eigener Wert, der die Erkennung dauerhaft überschreibt
+  - **↺** setzt das Feld auf den erkannten Wert zurück
+  - Leeres Feld = immer automatisch
+- **Addon ausblenden**: Blendet das Icon im normalen Modus aus
+- Die Meta-Zeile zeigt Slug, erkannte Host-IP und Port-Zuordnung
 
 ### Ausgeblendete Addons
 
@@ -46,10 +54,22 @@ Der Stift-Button in der Kopfzeile aktiviert den Bearbeitungsmodus (Button leucht
 - Im Bearbeitungsmodus: grau und gestrichelt dargestellt
 - Beim Deaktivieren des Bearbeitungsmodus verschwinden sie sofort
 
+## Einstellungen (⚙)
+
+- **Dark theme** / **Hide inactive addons**
+- **Internal host / IP**: Überschreibt die erkannte Host-IP (z. B. `192.168.178.37` oder `http://homeassistant.local:8123`)
+- **External base URL**: Überschreibt die externe HA-URL (z. B. `https://meine-domain.duckdns.org`)
+
+Leere Felder bedeuten „automatisch“. Nach einer Änderung werden alle erkannten Addon-Adressen sofort neu abgeleitet; manuell gesetzte Addon-URLs bleiben unberührt.
+
+## Eigene Karten (Custom)
+
+Im Bearbeitungsmodus erscheint der Abschnitt **Custom** mit einer **+ Add card**-Kachel. Damit lassen sich beliebige Links (Router, NAS, Webseiten …) mit Name, URL und eigenem Icon anlegen.
+
 ## Einstellungen werden dauerhaft gespeichert
 
-Alle URLs und Ausblend-Einstellungen werden im Browser (`localStorage`) gespeichert und bleiben nach einem Neustart erhalten.
+Alle URLs, Overrides, Reihenfolge und Ausblend-Einstellungen werden serverseitig in `/data/settings.json` gespeichert und bleiben nach einem Neustart erhalten. Die erkannten Adressen (`detected`) werden vom Addon selbst gepflegt.
 
 ## Aktualisieren (↺)
 
-Der Refresh-Button lädt die Addon-Liste neu vom Supervisor. Nützlich nach Installation oder Deinstallation von Addons.
+Der Refresh-Button erzwingt eine sofortige Neuabfrage des Supervisors (Addon-Liste, Host-Adressen, Icons).
