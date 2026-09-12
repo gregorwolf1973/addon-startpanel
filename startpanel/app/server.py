@@ -761,7 +761,7 @@ def api_addon_action(slug: str, action: str):
 
 # ── Health check ──────────────────────────────────────────────────
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
-_LOG_ERROR_RE = re.compile(r"\b(error|exception|traceback|fatal|critical|failed|failure|panic|denied|refused|unreachable|timed? ?out)\b", re.I)
+_LOG_ERROR_RE = re.compile(r"(error|exception|traceback|fatal|critical|fail(ed|ure)|panic|denied|refused|unreachable|unable to|timed? ?out)", re.I)
 # Lines that contain an error word but are not errors (config keys, level names, negations)
 _LOG_IGNORE_RE = re.compile(r"(error_log|log_level|loglevel|level=|errors?[=:]\s*0\b|no errors?|without error|error\.log|ErrorHandler|on_error|error_page|\[?(info|debug)\]?:)", re.I)
 
