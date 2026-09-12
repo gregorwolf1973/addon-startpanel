@@ -3,8 +3,11 @@ import json
 import base64
 import ipaddress
 import logging
+import re
+import socket
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from flask import Flask, render_template, jsonify, request, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -754,6 +757,106 @@ def api_addon_action(slug: str, action: str):
     except Exception as e:
         log.error("Refresh after %s failed: %s", action, e)
     return jsonify(ok=True, sidebar=sidebar)
+
+
+# ── Health check ──────────────────────────────────────────────────
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_LOG_ERROR_RE = re.compile(r"\b(error|exception|traceback|fatal|critical|failed|failure|panic|denied|refused|unreachable|timed? ?out)\b", re.I)
+# Lines that contain an error word but are not errors (config keys, level names, negations)
+_LOG_IGNORE_RE = re.compile(r"(error_log|log_level|loglevel|level=|errors?[=:]\s*0\b|no errors?|without error|error\.log|ErrorHandler|on_error|error_page|\[?(info|debug)\]?:)", re.I)
+
+
+def addon_logs(slug: str, lines: int = 200) -> str:
+    """Last log lines of an addon (latest start) from the Supervisor, colours stripped."""
+    hdr = {**HEADERS, "Accept": "text/plain"}
+    try:
+        r = requests.get(f"{SUPERVISOR_URL}/addons/{slug}/logs/latest", headers=hdr,
+                         params={"lines": lines, "no_colors": "true"}, timeout=20)
+        if r.status_code != 200:
+            r = requests.get(f"{SUPERVISOR_URL}/addons/{slug}/logs",
+                             headers={**hdr, "Range": f"entries=:-{lines}:"}, timeout=20)
+        if r.status_code != 200:
+            return ""
+        return _ANSI_RE.sub("", r.text)
+    except Exception as e:
+        log.warning("Logs of %s unavailable: %s", slug, e)
+        return ""
+
+
+def _port_open(host: str, port: int, timeout: float = 2.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def check_addon(entry: dict, hosts: dict, settings: dict, lines: int) -> dict:
+    slug = entry["slug"]
+    state = entry["state"]
+    issues = []
+    if state not in ("started", "stopped"):
+        issues.append({"level": "error", "text": f"Addon is in state '{state}'"})
+
+    # Log scan (running and errored addons; stopped ones only if they crashed recently is unknown – scan too, lower level)
+    text = addon_logs(slug, lines)
+    log_lines = [l for l in text.splitlines() if l.strip()]
+    hits = [l.strip() for l in log_lines if _LOG_ERROR_RE.search(l) and not _LOG_IGNORE_RE.search(l)]
+    if hits:
+        level = "warn" if state == "started" else ("error" if state not in ("started", "stopped") else "info")
+        issues.append({"level": level, "text": f"{len(hits)} error line(s) in the last {len(log_lines)} log lines"})
+
+    # Ports of running addons must answer on the host
+    if state == "started" and hosts.get("internal_host"):
+        for pm in entry.get("port_map") or []:
+            if not _port_open(hosts["internal_host"], pm["host"]):
+                issues.append({"level": "warn", "text": f"Port {pm['host']} ({pm['container']}) does not answer on {hosts['internal_host']}"})
+
+    if state != "started" and entry.get("ingress_panel"):
+        issues.append({"level": "info", "text": "Listed in the HA sidebar although not running"})
+
+    if state == "started" and not entry.get("has_ingress") and not entry.get("ports"):
+        pass  # background service – nothing to check
+
+    return {
+        "slug": slug, "name": entry["name"], "state": state,
+        "hasIngress": bool(entry.get("has_ingress")), "ports": entry.get("ports") or [],
+        "issues": issues, "logErrors": len(hits), "logLines": len(log_lines),
+        "logSamples": hits[-5:],
+    }
+
+
+@app.route("/api/health")
+def api_health():
+    """Check every addon: state, recent log errors, port reachability, sidebar consistency."""
+    lines = max(20, min(int(request.args.get("lines", 200)), 1000))
+    data = get_cached()
+    settings = load_settings()
+    hosts = effective_hosts(settings)
+    entries = data["running"] + data["stopped"]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda e: check_addon(e, hosts, settings, lines), entries))
+    order = {"error": 0, "warn": 1, "info": 2}
+    for r in results:
+        r["severity"] = min((order[i["level"]] for i in r["issues"]), default=3)
+    results.sort(key=lambda r: (r["severity"], r["name"].lower()))
+    summary = {
+        "addons": len(results),
+        "withIssues": sum(1 for r in results if r["issues"]),
+        "errors": sum(1 for r in results if r["severity"] == 0),
+        "warnings": sum(1 for r in results if r["severity"] == 1),
+    }
+    return jsonify(checkedAt=int(time.time()), host=hosts.get("internal_host"), summary=summary, addons=results)
+
+
+@app.route("/api/addons/<slug>/logs")
+def api_addon_logs(slug: str):
+    """Plain-text log of an addon (latest start)."""
+    lines = max(20, min(int(request.args.get("lines", 500)), 5000))
+    text = addon_logs(slug, lines)
+    if not text:
+        return Response("No log available for this addon.\n", mimetype="text/plain", status=404)
+    return Response(text, mimetype="text/plain; charset=utf-8")
 
 
 @app.route("/api/refresh")

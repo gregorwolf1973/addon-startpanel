@@ -23,6 +23,7 @@
         <button class="toggle-btn" data-mode="external" onclick="setMode('external')">External</button>
       </div>
       <button id="editBtn" class="icon-btn" onclick="toggleEditMode()" title="Edit">&#9998;</button>
+      <button id="healthBtn" class="icon-btn" onclick="openHealthModal()" title="Check addons for errors">&#9877;</button>
       <button id="settingsBtn" class="icon-btn" onclick="openSettingsModal()" title="Settings">&#9881;</button>
       <button class="icon-btn" onclick="refreshData()" title="Refresh">&#8635;</button>
     </div>
@@ -322,6 +323,23 @@
       </div>
       <div class="modal-footer">
         <button onclick="closeSettingsModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Health Modal -->
+  <div id="healthOverlay" class="modal-overlay hidden" onclick="closeHealthModal(event)">
+    <div class="modal wide" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Addon health check</div>
+          <div class="modal-hint" id="healthSummary">Checking state, logs and ports of every addon…</div>
+        </div>
+      </div>
+      <div class="modal-body health-body" id="healthBody"></div>
+      <div class="modal-footer">
+        <button onclick="runHealthCheck()">Check again</button>
+        <button onclick="closeHealthModal()">Close</button>
       </div>
     </div>
   </div>
@@ -919,6 +937,55 @@
           showToast('Icon removed.');
         })
         .catch(function() { showToast('Error removing icon.'); });
+    }
+
+    // ── Health Modal ─────────────────────────────────────────────
+    function openHealthModal() {
+      document.getElementById('healthOverlay').classList.remove('hidden');
+      runHealthCheck();
+    }
+    function closeHealthModal(event) {
+      if (event && event.target !== document.getElementById('healthOverlay') && event.type === 'click') return;
+      document.getElementById('healthOverlay').classList.add('hidden');
+    }
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+    }
+    function runHealthCheck() {
+      var body = document.getElementById('healthBody');
+      var sum = document.getElementById('healthSummary');
+      body.innerHTML = '<div class="health-loading">Checking state, logs and ports of every addon… this takes a moment.</div>';
+      sum.textContent = '';
+      fetch('api/health')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var s = data.summary;
+          sum.textContent = s.addons + ' addons checked · ' + s.errors + ' with errors · ' + s.warnings + ' with warnings · ' +
+            (s.addons - s.withIssues) + ' fine';
+          var html = '';
+          data.addons.forEach(function(a) {
+            if (!a.issues.length) return;
+            var lvl = a.severity === 0 ? 'error' : a.severity === 1 ? 'warn' : 'info';
+            html += '<div class="health-item ' + lvl + '">'
+              + '<div class="health-head"><img src="icon/' + esc(a.slug) + '" alt="" />'
+              + '<span class="health-name">' + esc(a.name) + '</span>'
+              + '<span class="health-state">' + esc(a.state) + '</span>'
+              + '<a class="health-log" href="api/addons/' + esc(a.slug) + '/logs" target="_blank" rel="noopener">Log</a></div>';
+            a.issues.forEach(function(i) {
+              html += '<div class="health-issue ' + esc(i.level) + '">' + esc(i.text) + '</div>';
+            });
+            if (a.logSamples.length) {
+              html += '<pre class="health-samples">' + a.logSamples.map(esc).join('\n') + '</pre>';
+            }
+            html += '</div>';
+          });
+          var fine = data.addons.filter(function(a) { return !a.issues.length; }).map(function(a) { return esc(a.name); });
+          if (fine.length) html += '<div class="health-fine"><b>No findings:</b> ' + fine.join(', ') + '</div>';
+          body.innerHTML = html || '<div class="health-fine">No findings – all addons look fine.</div>';
+        })
+        .catch(function() {
+          body.innerHTML = '<div class="health-issue error">Health check failed – see the Startpanel log.</div>';
+        });
     }
 
     // ── Settings Modal ───────────────────────────────────────────
