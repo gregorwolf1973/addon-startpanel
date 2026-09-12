@@ -80,6 +80,21 @@ def supervisor_get(path: str) -> dict:
         return {}
 
 
+def supervisor_post(path: str, timeout: int = 90) -> dict:
+    try:
+        r = requests.post(f"{SUPERVISOR_URL}{path}", headers=HEADERS, timeout=timeout)
+        try:
+            body = r.json()
+        except ValueError:
+            body = {}
+        if r.status_code >= 400 or body.get("result") == "error":
+            return {"result": "error", "message": body.get("message") or f"HTTP {r.status_code}"}
+        return body or {"result": "ok"}
+    except Exception as e:
+        log.error("Supervisor API error POST %s: %s", path, e)
+        return {"result": "error", "message": str(e)}
+
+
 # ── Host detection ────────────────────────────────────────────────
 def _detect_host_ip() -> str:
     """Primary IPv4 of the HA host via the Supervisor network API."""
@@ -616,6 +631,36 @@ def api_addons():
     """Cheap poll endpoint: cached addon list + snapshot for change detection."""
     data = get_cached()
     return jsonify(running=data["running"], stopped=data["stopped"], snapshot=data["snapshot"], ts=data["ts"])
+
+
+ADDON_ACTIONS = ("start", "stop", "restart")
+
+
+@app.route("/api/addons/<slug>/<action>", methods=["POST"])
+def api_addon_action(slug: str, action: str):
+    """Start, stop or restart an addon via the Supervisor."""
+    if action not in ADDON_ACTIONS:
+        return jsonify(ok=False, error="Unknown action"), 400
+    with _cache_lock:
+        known = {e["slug"]: e for e in _cache["running"] + _cache["stopped"]}
+    entry = known.get(slug)
+    if not entry:
+        return jsonify(ok=False, error="Unknown addon"), 404
+    running = entry["state"] == "started"
+    if action == "start" and running:
+        return jsonify(ok=True, alreadyRunning=True)
+    if action == "stop" and not running:
+        return jsonify(ok=True, alreadyStopped=True)
+    log.info("Addon %s: %s", slug, action)
+    res = supervisor_post(f"/addons/{slug}/{action}")
+    if res.get("result") != "ok":
+        log.warning("%s of %s failed: %s", action, slug, res.get("message"))
+        return jsonify(ok=False, error=res.get("message") or f"{action} failed"), 502
+    try:
+        refresh_cache()
+    except Exception as e:
+        log.error("Refresh after %s failed: %s", action, e)
+    return jsonify(ok=True)
 
 
 @app.route("/api/refresh")
