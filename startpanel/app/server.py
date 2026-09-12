@@ -445,9 +445,9 @@ def build_addon_list() -> tuple[list, list]:
     for a in addons_raw:
         slug = a.get("slug", "")
         state = a.get("state", "unknown")
-        has_ingress = bool(a.get("ingress"))
-
         detail = supervisor_get(f"/addons/{slug}/info").get("data", {})
+        # The /addons list carries no ingress flag – only the per-addon info does
+        has_ingress = bool(detail.get("ingress", a.get("ingress")))
         network_raw = detail.get("network") or {}
         ingress_port = detail.get("ingress_port")
         ingress_panel = bool(detail.get("ingress_panel")) if has_ingress else False
@@ -636,8 +636,30 @@ def api_addons():
 
 
 def _set_sidebar(slug: str, show: bool) -> dict:
-    """Set the Supervisor option ingress_panel for an addon."""
-    return supervisor_post(f"/addons/{slug}/options", timeout=30, payload={"ingress_panel": show})
+    """Set the Supervisor option ingress_panel for an addon and verify it took effect."""
+    res = supervisor_post(f"/addons/{slug}/options", timeout=30, payload={"ingress_panel": show})
+    log.info("Supervisor options %s ingress_panel=%s -> %s", slug, show, res)
+    if res.get("result") != "ok":
+        return res
+    info = supervisor_get(f"/addons/{slug}/info").get("data", {})
+    if "ingress_panel" in info and bool(info["ingress_panel"]) != show:
+        return {"result": "error",
+                "message": f"Supervisor accepted the change but still reports ingress_panel={info['ingress_panel']}"}
+    return res
+
+
+def sidebar_diag(slug: str) -> dict:
+    """What the Supervisor knows about an addon's sidebar panel – for troubleshooting."""
+    info = supervisor_get(f"/addons/{slug}/info").get("data", {})
+    panels = supervisor_get("/ingress/panels").get("data", {}).get("panels", {})
+    return {
+        "slug": slug,
+        "state": info.get("state"),
+        "ingress": info.get("ingress"),
+        "ingress_panel": info.get("ingress_panel"),
+        "panel_seen_by_home_assistant": panels.get(slug),
+        "supervisor_token_present": bool(SUPERVISOR_TOKEN),
+    }
 
 
 def _addon_flag(slug: str, key: str, value):
@@ -668,7 +690,7 @@ def api_addon_sidebar(slug: str):
     res = _set_sidebar(slug, show)
     if res.get("result") != "ok":
         log.warning("Sidebar toggle of %s failed: %s", slug, res.get("message"))
-        return jsonify(ok=False, error=res.get("message") or "Sidebar toggle failed"), 502
+        return jsonify(ok=False, error=res.get("message") or "Sidebar toggle failed", diag=sidebar_diag(slug)), 502
     if not show:
         # Explicitly hidden – don't bring it back automatically on the next start
         _addon_flag(slug, "sidebarOnStart", None)
@@ -676,7 +698,13 @@ def api_addon_sidebar(slug: str):
         refresh_cache()
     except Exception as e:
         log.error("Refresh after sidebar toggle failed: %s", e)
-    return jsonify(ok=True, show=show)
+    return jsonify(ok=True, show=show, diag=sidebar_diag(slug))
+
+
+@app.route("/api/addons/<slug>/diag")
+def api_addon_diag(slug: str):
+    """Troubleshooting view: addon info + the ingress panel list HA reads from the Supervisor."""
+    return jsonify(sidebar_diag(slug))
 
 
 ADDON_ACTIONS = ("start", "stop", "restart")

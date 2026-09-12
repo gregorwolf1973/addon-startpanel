@@ -539,12 +539,16 @@
         .then(function(r) { return r.json(); })
         .then(function(data) {
           card.classList.remove('busy');
+          if (data && data.diag) console.log('Startpanel sidebar diag', data.diag);
           if (data && data.ok) {
             card.dataset.ingressPanel = show ? 'true' : 'false';
             btn.classList.toggle('on', show);
             btn.innerHTML = '&#9707; ' + (show ? 'In sidebar' : 'Sidebar');
             btn.title = (show ? 'Hide from' : 'Show in') + ' Home Assistant sidebar';
-            showToast(name + (show ? ' added to the sidebar.' : ' removed from the sidebar.'));
+            var p = data.diag && data.diag.panel_seen_by_home_assistant;
+            var confirmed = p && p.enable === show;
+            showToast(name + (show ? ' added to the sidebar.' : ' removed from the sidebar.')
+              + (confirmed ? '' : ' (Supervisor panel list not updated yet – see log)'));
           } else {
             showToast('Sidebar toggle failed: ' + ((data && data.error) || 'unknown error'));
           }
