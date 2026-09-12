@@ -42,6 +42,7 @@
              data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
              data-ports="{{ addon.ports | tojson | e }}"
              data-state="running"
+             data-ingress-panel="{{ 'true' if addon.ingress_panel else 'false' }}"
              onclick="cardClick(this)">
           <div class="edit-badge">&#9998;</div>
           <div class="card-icon">
@@ -60,6 +61,10 @@
           <div class="card-actions" onclick="event.stopPropagation()">
             <button type="button" class="card-action stop" onclick="addonAction(this, 'stop')" title="Stop addon">&#9632; Stop</button>
             <button type="button" class="card-action restart" onclick="addonAction(this, 'restart')" title="Restart addon">&#8635; Restart</button>
+            {% if addon.has_ingress %}
+            <button type="button" class="card-action sidebar{% if addon.ingress_panel %} on{% endif %}" onclick="toggleSidebar(this)"
+                    title="{{ 'Hide from' if addon.ingress_panel else 'Show in' }} Home Assistant sidebar">&#9707; {{ 'In sidebar' if addon.ingress_panel else 'Sidebar' }}</button>
+            {% endif %}
           </div>
         </div>
         {% endfor %}
@@ -118,6 +123,7 @@
              data-has-ingress="{{ 'true' if addon.has_ingress else 'false' }}"
              data-ports="{{ addon.ports | tojson | e }}"
              data-state="stopped"
+             data-ingress-panel="{{ 'true' if addon.ingress_panel else 'false' }}"
              title="Click to start"
              onclick="cardClick(this)">
           <div class="edit-badge">&#9998;</div>
@@ -136,6 +142,10 @@
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
             <button type="button" class="card-action start" onclick="addonAction(this, 'start')" title="Start addon">&#9654; Start</button>
+            {% if addon.has_ingress %}
+            <button type="button" class="card-action sidebar{% if addon.ingress_panel %} on{% endif %}" onclick="toggleSidebar(this)"
+                    title="{{ 'Hide from' if addon.ingress_panel else 'Show in' }} Home Assistant sidebar">&#9707; {{ 'In sidebar' if addon.ingress_panel else 'Sidebar' }}</button>
+            {% endif %}
           </div>
         </div>
         {% endfor %}
@@ -508,6 +518,38 @@
         .catch(function() {
           card.classList.remove('busy');
           showToast('Could not ' + action + ' ' + name + '.');
+        });
+    }
+
+    // Show / hide an ingress addon in the HA sidebar (Supervisor option ingress_panel)
+    function toggleSidebar(btn) {
+      var card = btn.closest('.card');
+      if (!card || card.classList.contains('busy')) return;
+      var name = card.querySelector('.card-name').textContent;
+      var show = card.dataset.ingressPanel !== 'true';
+      card.classList.add('busy');
+      showToast((show ? 'Adding ' : 'Removing ') + name + (show ? ' to' : ' from') + ' the sidebar…');
+      fetch('api/addons/' + encodeURIComponent(card.dataset.slug) + '/sidebar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ show: show }),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          card.classList.remove('busy');
+          if (data && data.ok) {
+            card.dataset.ingressPanel = show ? 'true' : 'false';
+            btn.classList.toggle('on', show);
+            btn.innerHTML = '&#9707; ' + (show ? 'In sidebar' : 'Sidebar');
+            btn.title = (show ? 'Hide from' : 'Show in') + ' Home Assistant sidebar';
+            showToast(name + (show ? ' added to the sidebar.' : ' removed from the sidebar.'));
+          } else {
+            showToast('Sidebar toggle failed: ' + ((data && data.error) || 'unknown error'));
+          }
+        })
+        .catch(function() {
+          card.classList.remove('busy');
+          showToast('Sidebar toggle failed.');
         });
     }
 

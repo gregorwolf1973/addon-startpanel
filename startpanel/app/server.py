@@ -80,9 +80,9 @@ def supervisor_get(path: str) -> dict:
         return {}
 
 
-def supervisor_post(path: str, timeout: int = 90) -> dict:
+def supervisor_post(path: str, timeout: int = 90, payload: dict | None = None) -> dict:
     try:
-        r = requests.post(f"{SUPERVISOR_URL}{path}", headers=HEADERS, timeout=timeout)
+        r = requests.post(f"{SUPERVISOR_URL}{path}", headers=HEADERS, timeout=timeout, json=payload)
         try:
             body = r.json()
         except ValueError:
@@ -450,6 +450,7 @@ def build_addon_list() -> tuple[list, list]:
         detail = supervisor_get(f"/addons/{slug}/info").get("data", {})
         network_raw = detail.get("network") or {}
         ingress_port = detail.get("ingress_port")
+        ingress_panel = bool(detail.get("ingress_panel")) if has_ingress else False
         ports, port_map = [], []
         for key, val in network_raw.items():
             if val is None:
@@ -470,6 +471,7 @@ def build_addon_list() -> tuple[list, list]:
             "version": a.get("version", ""),
             "state": state,
             "has_ingress": has_ingress,
+            "ingress_panel": ingress_panel,
             "has_icon": _addon_has_icon(slug),
             "ports": ports,
             "port_map": port_map,
@@ -631,6 +633,30 @@ def api_addons():
     """Cheap poll endpoint: cached addon list + snapshot for change detection."""
     data = get_cached()
     return jsonify(running=data["running"], stopped=data["stopped"], snapshot=data["snapshot"], ts=data["ts"])
+
+
+@app.route("/api/addons/<slug>/sidebar", methods=["POST"])
+def api_addon_sidebar(slug: str):
+    """Show or hide an ingress addon in the Home Assistant sidebar (ingress_panel option)."""
+    body = request.get_json(silent=True) or {}
+    show = bool(body.get("show"))
+    with _cache_lock:
+        known = {e["slug"]: e for e in _cache["running"] + _cache["stopped"]}
+    entry = known.get(slug)
+    if not entry:
+        return jsonify(ok=False, error="Unknown addon"), 404
+    if not entry.get("has_ingress"):
+        return jsonify(ok=False, error="Addon has no ingress – cannot be shown in the sidebar"), 400
+    log.info("Addon %s: sidebar %s", slug, "on" if show else "off")
+    res = supervisor_post(f"/addons/{slug}/options", timeout=30, payload={"ingress_panel": show})
+    if res.get("result") != "ok":
+        log.warning("Sidebar toggle of %s failed: %s", slug, res.get("message"))
+        return jsonify(ok=False, error=res.get("message") or "Sidebar toggle failed"), 502
+    try:
+        refresh_cache()
+    except Exception as e:
+        log.error("Refresh after sidebar toggle failed: %s", e)
+    return jsonify(ok=True, show=show)
 
 
 ADDON_ACTIONS = ("start", "stop", "restart")
