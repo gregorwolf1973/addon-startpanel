@@ -635,6 +635,23 @@ def api_addons():
     return jsonify(running=data["running"], stopped=data["stopped"], snapshot=data["snapshot"], ts=data["ts"])
 
 
+def _set_sidebar(slug: str, show: bool) -> dict:
+    """Set the Supervisor option ingress_panel for an addon."""
+    return supervisor_post(f"/addons/{slug}/options", timeout=30, payload={"ingress_panel": show})
+
+
+def _addon_flag(slug: str, key: str, value):
+    """Store (or remove, when value is None) a per-addon flag in settings.json."""
+    with _settings_lock:
+        settings = load_settings()
+        s = settings.setdefault("addons", {}).setdefault(slug, {})
+        if value is None:
+            s.pop(key, None)
+        else:
+            s[key] = value
+        save_settings(settings)
+
+
 @app.route("/api/addons/<slug>/sidebar", methods=["POST"])
 def api_addon_sidebar(slug: str):
     """Show or hide an ingress addon in the Home Assistant sidebar (ingress_panel option)."""
@@ -648,10 +665,13 @@ def api_addon_sidebar(slug: str):
     if not entry.get("has_ingress"):
         return jsonify(ok=False, error="Addon has no ingress – cannot be shown in the sidebar"), 400
     log.info("Addon %s: sidebar %s", slug, "on" if show else "off")
-    res = supervisor_post(f"/addons/{slug}/options", timeout=30, payload={"ingress_panel": show})
+    res = _set_sidebar(slug, show)
     if res.get("result") != "ok":
         log.warning("Sidebar toggle of %s failed: %s", slug, res.get("message"))
         return jsonify(ok=False, error=res.get("message") or "Sidebar toggle failed"), 502
+    if not show:
+        # Explicitly hidden – don't bring it back automatically on the next start
+        _addon_flag(slug, "sidebarOnStart", None)
     try:
         refresh_cache()
     except Exception as e:
@@ -682,11 +702,30 @@ def api_addon_action(slug: str, action: str):
     if res.get("result") != "ok":
         log.warning("%s of %s failed: %s", action, slug, res.get("message"))
         return jsonify(ok=False, error=res.get("message") or f"{action} failed"), 502
+
+    # A stopped addon disappears from the HA sidebar; it comes back when it is
+    # started again from here (unless it was hidden explicitly in the meantime).
+    sidebar = None
+    if entry.get("has_ingress"):
+        if action == "stop" and entry.get("ingress_panel"):
+            r = _set_sidebar(slug, False)
+            if r.get("result") == "ok":
+                _addon_flag(slug, "sidebarOnStart", True)
+                sidebar = False
+            else:
+                log.warning("Could not hide %s from the sidebar: %s", slug, r.get("message"))
+        elif action == "start" and (load_settings().get("addons", {}).get(slug) or {}).get("sidebarOnStart"):
+            r = _set_sidebar(slug, True)
+            if r.get("result") == "ok":
+                _addon_flag(slug, "sidebarOnStart", None)
+                sidebar = True
+            else:
+                log.warning("Could not restore %s in the sidebar: %s", slug, r.get("message"))
     try:
         refresh_cache()
     except Exception as e:
         log.error("Refresh after %s failed: %s", action, e)
-    return jsonify(ok=True)
+    return jsonify(ok=True, sidebar=sidebar)
 
 
 @app.route("/api/refresh")

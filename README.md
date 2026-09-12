@@ -30,7 +30,7 @@ Startpanel zeigt alle installierten Home Assistant Addons auf einer Übersichtss
 - **Host-Overrides** – Host-IP und externe Basis-URL in den Einstellungen manuell festlegen
 - **Nginx Proxy Manager** – Proxy-Hosts des NPM-Addons werden ausgelesen: eine Domain, die auf ein Addon zeigt, wird dessen externe Adresse; eine Domain auf HA selbst (Port 8123) wird die externe Basis für Ingress-Links
 - **Start / Stop / Restart** – Jede Addon-Karte hat eine Aktionsleiste; ein Klick auf ein gestopptes Addon startet es ebenfalls
-- **Seitenleiste** – Ingress-Addons per Knopf in der HA-Seitenleiste ein- oder ausblenden
+- **Seitenleiste** – Ingress-Addons per Knopf in der HA-Seitenleiste ein- oder ausblenden; ein gestopptes Addon verschwindet aus der Seitenleiste und kehrt beim nächsten Start zurück
 - **Eigene Karten** – Beliebige Links mit Name, URL und Icon hinzufügen
 - **Dauerhaft gespeichert** – Alle Einstellungen liegen serverseitig in `/data/settings.json`
 
@@ -62,7 +62,7 @@ Startpanel displays all installed Home Assistant addons on a visual overview pag
 - **Host overrides** – Set host IP and external base URL manually in the settings
 - **Nginx Proxy Manager** – Proxy hosts of the NPM addon are read: a domain that forwards to an addon becomes its external URL; a domain for HA itself (port 8123) becomes the external base for ingress links
 - **Start / Stop / Restart** – Every addon card has an action bar; clicking a stopped addon starts it as well
-- **Sidebar** – Show or hide ingress addons in the HA sidebar with one click
+- **Sidebar** – Show or hide ingress addons in the HA sidebar with one click; a stopped addon leaves the sidebar and returns when started again
 - **Custom cards** – Add any link with name, URL and icon
 - **Persistent settings** – Everything is stored server-side in `/data/settings.json`
 

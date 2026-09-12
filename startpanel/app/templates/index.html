@@ -508,7 +508,9 @@
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data && data.ok) {
-            showToast(name + ' ' + txt[1] + '.');
+            var extra = data.sidebar === false ? ' Removed from the sidebar.'
+                      : data.sidebar === true ? ' Back in the sidebar.' : '';
+            showToast(name + ' ' + txt[1] + '.' + extra);
             setTimeout(function() { window.location.reload(); }, 1200);
           } else {
             card.classList.remove('busy');
