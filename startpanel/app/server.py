@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import ipaddress
 import logging
 import threading
 import time
@@ -58,6 +59,16 @@ def save_settings(data: dict):
         os.replace(tmp, SETTINGS_FILE)
 
 
+def public_settings(settings: dict) -> dict:
+    """Copy for the browser: the NPM password is replaced by a flag."""
+    out = json.loads(json.dumps(settings))
+    glob = out.get("global") or {}
+    if "npmPassword" in glob:
+        glob["npmPasswordSet"] = bool(glob.pop("npmPassword"))
+        out["global"] = glob
+    return out
+
+
 # ── Supervisor API ────────────────────────────────────────────────
 def supervisor_get(path: str) -> dict:
     try:
@@ -97,16 +108,189 @@ def get_host_info(force: bool = False) -> dict:
     host_ip = _detect_host_ip()
     if not host_ip and internal_url:
         host_ip = urlparse(internal_url).hostname or ""
-    _host_info = {
+    info = {
         "host_ip": host_ip,
         "internal_url": internal_url,
         "external_url": external_url,
     }
-    log.info("Host info: ip=%s internal=%s external=%s", host_ip, internal_url, external_url)
-    return _host_info
+    if any(info.values()):
+        _host_info = info
+        log.info("Host info: ip=%s internal=%s external=%s", host_ip, internal_url, external_url)
+    else:
+        # Supervisor/Core not ready yet (e.g. right after a reboot) – don't cache
+        # the empty result, the next refresh retries the detection.
+        log.warning("Host detection returned nothing – will retry on next refresh")
+    return info
 
 
-def effective_hosts(settings: dict) -> dict:
+# Fallback derived from how the browser reaches Home Assistant (X-Forwarded-Host
+# through ingress). Used only when the Supervisor gives us no host information.
+_seen_hosts: dict[str, str] = {}
+
+
+_HASSIO_NET = ipaddress.ip_network("172.30.32.0/23")  # supervisor-internal docker network
+
+
+def _is_local_host(hostname: str) -> bool:
+    try:
+        return ipaddress.ip_address(hostname).is_private
+    except ValueError:
+        return hostname.endswith(".local") or "." not in hostname
+
+
+def _remember_request_host() -> bool:
+    """Record the origin the current request came through. Returns True if it changed."""
+    fwd_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+    via_ingress = bool(request.headers.get("X-Ingress-Path"))
+    if via_ingress and not fwd_host:
+        return False  # proxied, but we don't know the address the browser used
+    host = fwd_host or request.host or ""
+    hostname = urlparse(f"//{host}").hostname or ""
+    if not hostname or hostname in ("localhost", "127.0.0.1"):
+        return False
+    try:
+        if ipaddress.ip_address(hostname) in _HASSIO_NET:
+            return False
+    except ValueError:
+        pass
+    scheme = request.scheme if via_ingress else "http"
+    if via_ingress:
+        base = f"{scheme}://{host}"
+    else:
+        # Direct access on the addon port – the HA UI lives on the same host, port 8123
+        base = f"http://{hostname}:8123"
+    key = "internal" if _is_local_host(hostname) else "external"
+    new = {f"{key}_base": base, f"{key}_host": hostname}
+    if all(_seen_hosts.get(k) == v for k, v in new.items()):
+        return False
+    _seen_hosts.update(new)
+    log.info("Remembered %s host from request: %s", key, base)
+    return True
+
+
+# ── Nginx Proxy Manager ───────────────────────────────────────────
+# Proxy hosts of the NPM addon are matched against the addons: a domain that
+# forwards to an addon (by container name or host IP + exposed port) becomes
+# its external URL, a domain that forwards to HA itself (port 8123) is used as
+# external base for ingress URLs.
+NPM_SLUGS = ("a0d7b954_nginxproxymanager",)
+NPM_TIMEOUT = 5
+_npm: dict = {"hosts": [], "ok": False, "status": "not configured", "token": "", "base": "", "creds": ""}
+_npm_lock = threading.Lock()
+
+
+def _npm_base_urls(settings: dict) -> list[str]:
+    glob = settings.get("global") or {}
+    override = (glob.get("npmUrl") or "").strip().rstrip("/")
+    if override:
+        return [override if "://" in override else f"http://{override}"]
+    urls = []
+    # 1) the addon's own hostname on the Supervisor network (admin UI listens on 81)
+    for slug in NPM_SLUGS:
+        urls.append(f"http://{slug.replace('_', '-')}:81")
+    # 2) host IP + the host port mapped to the admin UI
+    with _cache_lock:
+        entries = list(_cache["running"]) + list(_cache["stopped"])
+    host = effective_hosts(settings, with_proxy=False)["internal_host"]
+    for e in entries:
+        if e["slug"] not in NPM_SLUGS or not host:
+            continue
+        for pm in e.get("port_map") or []:
+            if str(pm.get("container", "")).startswith("81/"):
+                urls.append(f"http://{host}:{pm['host']}")
+    return urls
+
+
+def _npm_login(base: str, user: str, password: str) -> str:
+    r = requests.post(f"{base}/api/tokens", json={"identity": user, "secret": password}, timeout=NPM_TIMEOUT)
+    if r.status_code in (401, 403):
+        raise PermissionError("login failed – check username / password")
+    r.raise_for_status()
+    token = (r.json() or {}).get("token") or ""
+    if not token:
+        raise RuntimeError("no token in login response")
+    return token
+
+
+def _npm_parse_hosts(raw: list) -> list[dict]:
+    hosts = []
+    for h in raw or []:
+        if not isinstance(h, dict) or not h.get("enabled", True):
+            continue
+        domains = [d for d in (h.get("domain_names") or []) if d]
+        if not domains:
+            continue
+        try:
+            port = int(h.get("forward_port") or 0)
+        except (TypeError, ValueError):
+            port = 0
+        hosts.append({
+            "domains": domains,
+            "forward_host": str(h.get("forward_host") or "").strip().lower(),
+            "forward_port": port,
+            "https": bool(h.get("certificate_id")) or bool(h.get("ssl_forced")),
+        })
+    return hosts
+
+
+def npm_refresh(settings: dict) -> dict:
+    """Fetch the proxy hosts from Nginx Proxy Manager (if credentials are configured)."""
+    glob = settings.get("global") or {}
+    user = (glob.get("npmUser") or "").strip()
+    password = glob.get("npmPassword") or ""
+    with _npm_lock:
+        if not user or not password:
+            _npm.update(hosts=[], ok=False, status="not configured", token="", base="", creds="")
+            return dict(_npm)
+        creds = "\n".join((user, password, glob.get("npmUrl") or ""))
+        if creds != _npm["creds"]:
+            _npm.update(token="", base="", creds=creds)
+
+        bases = _npm_base_urls(settings)
+        if _npm["base"] in bases:  # try the last working address first
+            bases.remove(_npm["base"])
+            bases.insert(0, _npm["base"])
+        last_err = "no address for Nginx Proxy Manager found"
+        for base in bases:
+            try:
+                token = _npm["token"] if base == _npm["base"] else ""
+                for attempt in (1, 2):
+                    if not token:
+                        token = _npm_login(base, user, password)
+                    r = requests.get(f"{base}/api/nginx/proxy-hosts",
+                                     headers={"Authorization": f"Bearer {token}"}, timeout=NPM_TIMEOUT)
+                    if r.status_code in (401, 403) and attempt == 1:
+                        token = ""  # expired token – log in again
+                        continue
+                    r.raise_for_status()
+                    break
+                hosts = _npm_parse_hosts(r.json())
+                if _npm["base"] != base or not _npm["ok"]:
+                    log.info("Nginx Proxy Manager: %d proxy hosts via %s", len(hosts), base)
+                _npm.update(hosts=hosts, ok=True, token=token, base=base,
+                            status=f"connected – {len(hosts)} proxy hosts ({base})")
+                return dict(_npm)
+            except PermissionError as e:
+                last_err = str(e)
+                break  # wrong credentials: no point trying other addresses
+            except Exception as e:
+                last_err = f"{base}: {e}"
+        _npm.update(hosts=[], ok=False, token="", status=f"error – {last_err}")
+        log.warning("Nginx Proxy Manager unreachable: %s", last_err)
+        return dict(_npm)
+
+
+def npm_public() -> dict:
+    with _npm_lock:
+        return {"ok": _npm["ok"], "status": _npm["status"], "count": len(_npm["hosts"])}
+
+
+def npm_hosts() -> list[dict]:
+    with _npm_lock:
+        return list(_npm["hosts"])
+
+
+def effective_hosts(settings: dict, with_proxy: bool = True) -> dict:
     """Merge detected host info with the user's manual overrides from settings."""
     info = get_host_info()
     glob = settings.get("global") or {}
@@ -122,8 +306,25 @@ def effective_hosts(settings: dict) -> dict:
     else:
         internal_host = info["host_ip"] or urlparse(info["internal_url"]).hostname or ""
         internal_base = info["internal_url"] or (f"http://{internal_host}:8123" if internal_host else "")
+        if not internal_base and _seen_hosts.get("internal_base"):
+            # Last resort: the address the browser itself uses to reach HA
+            internal_base = _seen_hosts["internal_base"]
+            internal_host = internal_host or _seen_hosts["internal_host"]
 
-    external_base = override_ext or info["external_url"]
+    # Names under which a proxy host may address the HA host itself
+    ha_names = {n.lower() for n in (
+        internal_host, info["host_ip"], urlparse(info["internal_url"]).hostname or "",
+        _seen_hosts.get("internal_host", ""), "homeassistant", "homeassistant.local",
+        "172.30.32.1", "127.0.0.1", "localhost", "host.docker.internal") if n}
+
+    proxy_hosts = npm_hosts() if with_proxy else []
+    npm_ha_base = ""
+    for ph in proxy_hosts:
+        if ph["forward_host"] in ha_names and ph["forward_port"] == 8123:
+            npm_ha_base = f"{'https' if ph['https'] else 'http'}://{ph['domains'][0]}"
+            break
+
+    external_base = override_ext or info["external_url"] or npm_ha_base or _seen_hosts.get("external_base", "")
     if external_base and "://" not in external_base:
         external_base = f"https://{external_base}"
 
@@ -131,6 +332,8 @@ def effective_hosts(settings: dict) -> dict:
         "internal_host": internal_host,
         "internal_base": internal_base,
         "external_base": external_base,
+        "ha_names": ha_names,
+        "proxy_hosts": proxy_hosts,
     }
 
 
@@ -144,7 +347,16 @@ def detect_urls(entry: dict, hosts: dict) -> dict:
     slug = entry["slug"]
     ports = entry.get("ports") or []
     has_ingress = entry.get("has_ingress", False)
-    c = {"ingressInternal": "", "portInternal": "", "ingressExternal": "", "portExternal": ""}
+    c = {"ingressInternal": "", "portInternal": "", "ingressExternal": "", "portExternal": "", "proxyExternal": ""}
+
+    # A proxy host in Nginx Proxy Manager that forwards to this addon – either by
+    # its container name or by HA host + one of its exposed ports
+    addon_names = {slug.lower(), slug.lower().replace("_", "-"), f"addon_{slug.lower()}"}
+    for ph in hosts.get("proxy_hosts") or []:
+        fh = ph["forward_host"]
+        if fh in addon_names or (fh in hosts.get("ha_names", ()) and ph["forward_port"] in ports):
+            c["proxyExternal"] = f"{'https' if ph['https'] else 'http'}://{ph['domains'][0]}"
+            break
 
     if has_ingress and hosts["internal_base"]:
         c["ingressInternal"] = f"{hosts['internal_base']}/hassio/ingress/{slug}"
@@ -160,7 +372,7 @@ def detect_urls(entry: dict, hosts: dict) -> dict:
 
     return {
         "internalUrl": c["ingressInternal"] or c["portInternal"],
-        "externalUrl": c["ingressExternal"] or c["portExternal"],
+        "externalUrl": c["proxyExternal"] or c["ingressExternal"] or c["portExternal"],
         "candidates": c,
         "hostIp": hosts["internal_host"],
         "ports": ports,
@@ -283,9 +495,10 @@ def refresh_cache() -> list:
         # Supervisor unreachable – keep the last good list
         log.warning("Supervisor returned no addons, keeping cached list")
         return []
-    _, new_slugs = sync_detected(running, stopped)
     with _cache_lock:
         _cache.update(running=running, stopped=stopped, snapshot=_snapshot(running, stopped), ts=time.time())
+    npm_refresh(load_settings())
+    _, new_slugs = sync_detected(running, stopped)
     return new_slugs
 
 
@@ -314,6 +527,20 @@ threading.Thread(target=_poller, name="startpanel-poller", daemon=True).start()
 
 
 # ── Routes ────────────────────────────────────────────────────────
+@app.before_request
+def _track_request_host():
+    if not _remember_request_host():
+        return
+    # A new fallback host may complete addon URLs that were empty so far
+    with _cache_lock:
+        running, stopped = list(_cache["running"]), list(_cache["stopped"])
+    if running or stopped:
+        try:
+            sync_detected(running, stopped)
+        except Exception as e:
+            log.error("Re-sync after host change failed: %s", e)
+
+
 @app.route("/")
 def index():
     data = get_cached()
@@ -325,6 +552,7 @@ def index():
         stopped=data["stopped"],
         snapshot=data["snapshot"],
         host_info=get_host_info(),
+        npm_info=npm_public(),
         custom_cards=custom_cards,
     )
 
@@ -403,6 +631,7 @@ def api_refresh():
         stopped=data["stopped"],
         snapshot=data["snapshot"],
         host_info=get_host_info(),
+        npm=npm_public(),
         customCards=settings.get("customCards", []),
         newSlugs=new_slugs,
     )
@@ -410,7 +639,7 @@ def api_refresh():
 
 @app.route("/api/settings", methods=["GET"])
 def get_settings():
-    return jsonify(load_settings())
+    return jsonify(public_settings(load_settings()))
 
 
 @app.route("/api/settings", methods=["POST"])
@@ -418,6 +647,19 @@ def post_settings():
     incoming = request.get_json(force=True) or {}
     with _settings_lock:
         current = load_settings()
+        cur_glob = current.get("global") or {}
+        glob = incoming.get("global")
+        if not isinstance(glob, dict):
+            glob = incoming["global"] = {}
+        # The browser never receives the NPM password – keep the stored one unless
+        # a new one was typed; clearing the username drops the password as well.
+        glob.pop("npmPasswordSet", None)
+        if not glob.get("npmPassword"):
+            if (glob.get("npmUser") or "").strip():
+                glob["npmPassword"] = cur_glob.get("npmPassword", "")
+            else:
+                glob.pop("npmPassword", None)
+        npm_changed = any(glob.get(k, "") != cur_glob.get(k, "") for k in ("npmUrl", "npmUser", "npmPassword"))
         # Server-owned fields win over whatever copy the browser sent
         cur_addons = current.get("addons") or {}
         for slug, s in (incoming.get("addons") or {}).items():
@@ -433,9 +675,11 @@ def post_settings():
         with _cache_lock:
             running, stopped = list(_cache["running"]), list(_cache["stopped"])
         save_settings(incoming)
+        if npm_changed:
+            npm_refresh(incoming)
         if running or stopped:
             incoming, _ = sync_detected(running, stopped, incoming)
-    return jsonify(ok=True, settings=incoming)
+    return jsonify(ok=True, settings=public_settings(incoming), npm=npm_public())
 
 
 if __name__ == "__main__":

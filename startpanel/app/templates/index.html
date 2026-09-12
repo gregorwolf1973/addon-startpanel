@@ -179,6 +179,11 @@
             <input type="text" readonly class="ref-input" id="refPortExternalInput" onclick="this.select()" />
             <button type="button" class="ref-use" onclick="useDetected('external', 'portExternal')" title="Use as external URL">&rarr; Ext</button>
           </div>
+          <div class="ref-row" id="refProxyExternal">
+            <span class="ref-label">Proxy domain</span>
+            <input type="text" readonly class="ref-input" id="refProxyExternalInput" onclick="this.select()" title="From Nginx Proxy Manager" />
+            <button type="button" class="ref-use" onclick="useDetected('external', 'proxyExternal')" title="Use as external URL">&rarr; Ext</button>
+          </div>
           <div class="ref-row ref-empty" id="refNone" style="display:none">
             <span class="ref-label">&nbsp;</span>
             <span class="ref-hint">Nothing detected – no ingress and no exposed port.</span>
@@ -288,6 +293,14 @@
         <label>External base URL <span class="auto-badge" id="settingsExternalBaseBadge">auto</span></label>
         <input id="settingsExternalBase" type="text" placeholder="auto" oninput="updateHostBadge('ExternalBase')" onchange="onHostChange()" />
         <div class="modal-hint">Detected from Home Assistant: <code id="settingsDetectedHosts"></code>. Leave empty to use the detected values; detected addon URLs are re-derived from these.</div>
+
+        <label>Nginx Proxy Manager <span class="auto-badge" id="settingsNpmBadge">off</span></label>
+        <input id="settingsNpmUrl" type="text" placeholder="auto (addon on port 81)" onchange="onNpmChange()" />
+        <div class="input-row">
+          <input id="settingsNpmUser" type="text" placeholder="Username (e-mail)" autocomplete="off" onchange="onNpmChange()" />
+          <input id="settingsNpmPassword" type="password" placeholder="Password" autocomplete="new-password" onchange="onNpmChange()" />
+        </div>
+        <div class="modal-hint">Status: <code id="settingsNpmStatus"></code>. Proxy hosts that forward to an addon (container name, or HA host + exposed port) are used as its external URL; a proxy host for HA itself (port 8123) becomes the external base for ingress. Leave the username empty to disable.</div>
       </div>
       <div class="modal-footer">
         <button onclick="closeSettingsModal()">Close</button>
@@ -302,6 +315,7 @@
     var hostInfo = {{ host_info | tojson }};
     var haInternalUrl = hostInfo.internal_url || '';
     var haExternalUrl = hostInfo.external_url || '';
+    var npmInfo = {{ npm_info | tojson }};
     var _renderedSnapshot = {{ snapshot | tojson }};
 
     // ── Server-side settings ─────────────────────────────────────
@@ -338,12 +352,13 @@
     function getAddon(slug) { return (_settings.addons || {})[slug] || {}; }
     function getDetected(slug) { return getAddon(slug).detected || {}; }
 
-    // Manual URL wins; otherwise the auto-detected one
+    // Manual URL wins; otherwise the auto-detected one. If the requested
+    // mode has no address at all, fall back to the other one.
     function effectiveUrl(slug, mode) {
       var s = getAddon(slug), d = getDetected(slug);
       var internal = s.internalUrl || d.internalUrl || '';
       var external = s.externalUrl || d.externalUrl || '';
-      return mode === 'external' ? (external || internal) : internal;
+      return mode === 'external' ? (external || internal) : (internal || external);
     }
 
     function setAddon(slug, data) {
@@ -450,7 +465,7 @@
       } else {
         var slug = card.dataset.slug;
         var url = effectiveUrl(slug, currentMode) || buildIngressUrl(card);
-        if (!url) { showToast('No URL — please set one in edit mode.'); return; }
+        if (!url) { showToast('No address detected for this addon – set one in edit mode (✎).'); return; }
         window.open(url, '_blank');
       }
     }
@@ -485,7 +500,8 @@
       [['ingressInternal', 'refIngressInternal', 'refIngressInternalInput'],
        ['portInternal', 'refPortInternal', 'refPortInternalInput'],
        ['ingressExternal', 'refIngressExternal', 'refIngressExternalInput'],
-       ['portExternal', 'refPortExternal', 'refPortExternalInput']].forEach(function(row) {
+       ['portExternal', 'refPortExternal', 'refPortExternalInput'],
+       ['proxyExternal', 'refProxyExternal', 'refProxyExternalInput']].forEach(function(row) {
         var val = c[row[0]] || '';
         document.getElementById(row[1]).style.display = val ? '' : 'none';
         document.getElementById(row[2]).value = val;
@@ -496,8 +512,8 @@
       // Fields show the effective URL: manual override if set, else detected
       document.getElementById('modalInternal').value = s.internalUrl || d.internalUrl || '';
       document.getElementById('modalExternal').value = s.externalUrl || d.externalUrl || '';
-      document.getElementById('modalInternal').placeholder = d.internalUrl || 'http://192.168.178.37:8123/hassio/ingress/...';
-      document.getElementById('modalExternal').placeholder = d.externalUrl || 'https://my-domain.com/hassio/ingress/...';
+      document.getElementById('modalInternal').placeholder = d.internalUrl || 'http://192.168.x.x:8123/hassio/ingress/' + _currentSlug;
+      document.getElementById('modalExternal').placeholder = d.externalUrl || 'https://my-domain.com/hassio/ingress/' + _currentSlug;
       updateBadge('internal');
       updateBadge('external');
 
@@ -832,7 +848,49 @@
         'IP ' + (hostInfo.host_ip || '?') + ' · ' + (hostInfo.internal_url || '?') + ' · ' + (hostInfo.external_url || 'no external URL');
       updateHostBadge('InternalHost');
       updateHostBadge('ExternalBase');
+
+      document.getElementById('settingsNpmUrl').value = getGlobal('npmUrl', '');
+      document.getElementById('settingsNpmUser').value = getGlobal('npmUser', '');
+      var pw = document.getElementById('settingsNpmPassword');
+      pw.value = '';
+      pw.placeholder = getGlobal('npmPasswordSet', false) ? '••••••••  (saved – type to replace)' : 'Password';
+      updateNpmStatus();
       document.getElementById('settingsOverlay').classList.remove('hidden');
+    }
+
+    function updateNpmStatus() {
+      var badge = document.getElementById('settingsNpmBadge');
+      var configured = !!getGlobal('npmUser', '');
+      badge.textContent = !configured ? 'off' : (npmInfo.ok ? 'connected' : 'error');
+      badge.classList.toggle('manual', configured && !npmInfo.ok);
+      document.getElementById('settingsNpmStatus').textContent = npmInfo.status || 'not configured';
+    }
+
+    var _npmSaveTimer = null;
+    function onNpmChange() {
+      if (!_settings.global) _settings.global = {};
+      _settings.global.npmUrl = document.getElementById('settingsNpmUrl').value.trim();
+      _settings.global.npmUser = document.getElementById('settingsNpmUser').value.trim();
+      var pwInput = document.getElementById('settingsNpmPassword');
+      // Only send a password when a new one was typed – the server keeps the stored one otherwise
+      if (pwInput.value) _settings.global.npmPassword = pwInput.value;
+      else delete _settings.global.npmPassword;
+      clearTimeout(_npmSaveTimer);
+      _npmSaveTimer = setTimeout(function() {
+        document.getElementById('settingsNpmStatus').textContent = 'connecting…';
+        persistSettings().then(function(data) {
+          if (!data || !data.ok) return;
+          delete _settings.global.npmPassword;
+          if (data.settings && data.settings.global) {
+            _settings.global.npmPasswordSet = !!data.settings.global.npmPasswordSet;
+          }
+          if (data.npm) npmInfo = data.npm;
+          pwInput.value = '';
+          pwInput.placeholder = _settings.global.npmPasswordSet ? '••••••••  (saved – type to replace)' : 'Password';
+          updateNpmStatus();
+          showToast(npmInfo.ok ? 'Proxy hosts loaded – addresses updated.' : (_settings.global.npmUser ? 'Nginx Proxy Manager: ' + npmInfo.status : 'Nginx Proxy Manager disabled.'));
+        });
+      }, 300);
     }
 
     function updateHostBadge(which) {

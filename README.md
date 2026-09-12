@@ -28,6 +28,7 @@ Startpanel zeigt alle installierten Home Assistant Addons auf einer Übersichtss
 - **Intern/Extern Umschalter** – Wähle ob Links intern oder extern geöffnet werden sollen
 - **Bearbeitungsmodus (✎)** – Erkannte Adressen pro Addon manuell überschreiben (Badge *auto* / *manual*, ↺ setzt zurück), Addons ausblenden
 - **Host-Overrides** – Host-IP und externe Basis-URL in den Einstellungen manuell festlegen
+- **Nginx Proxy Manager** – Proxy-Hosts des NPM-Addons werden ausgelesen: eine Domain, die auf ein Addon zeigt, wird dessen externe Adresse; eine Domain auf HA selbst (Port 8123) wird die externe Basis für Ingress-Links
 - **Eigene Karten** – Beliebige Links mit Name, URL und Icon hinzufügen
 - **Dauerhaft gespeichert** – Alle Einstellungen liegen serverseitig in `/data/settings.json`
 
@@ -57,6 +58,7 @@ Startpanel displays all installed Home Assistant addons on a visual overview pag
 - **Internal/External toggle** – Choose whether links open via internal or external address
 - **Edit mode (✎)** – Override the detected addresses per addon (badge *auto* / *manual*, ↺ resets), hide addons from the panel
 - **Host overrides** – Set host IP and external base URL manually in the settings
+- **Nginx Proxy Manager** – Proxy hosts of the NPM addon are read: a domain that forwards to an addon becomes its external URL; a domain for HA itself (port 8123) becomes the external base for ingress links
 - **Custom cards** – Add any link with name, URL and icon
 - **Persistent settings** – Everything is stored server-side in `/data/settings.json`
 
@@ -71,6 +73,7 @@ Startpanel displays all installed Home Assistant addons on a visual overview pag
 Nothing to configure – host IP and HA URLs are detected from the Supervisor. If the detection does not match your setup, click the **⚙ gear button** and override:
 - **Internal host / IP**: e.g. `192.168.178.37`
 - **External base URL**: e.g. `https://your-domain.duckdns.org` (defaults to the external URL configured in HA)
+- **Nginx Proxy Manager**: enter the username (e-mail) and password of your NPM admin login. The addon is found automatically (`a0d7b954_nginxproxymanager`, admin API on port 81); set the URL only if it runs elsewhere. Proxy hosts are matched by container name (e.g. `a0d7b954-nodered`) or by HA host + exposed port. The password is stored in `/data/settings.json` and never sent back to the browser.
 
 Then use the **✎ edit button** to adjust individual addon URLs if needed.
 
