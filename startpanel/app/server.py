@@ -710,12 +710,27 @@ def api_addon_diag(slug: str):
     return jsonify(sidebar_diag(slug))
 
 
-ADDON_ACTIONS = ("start", "stop", "restart")
+ADDON_ACTIONS = ("start", "stop", "restart", "update")
+
+
+def _update_addon(slug: str) -> dict:
+    """Refresh the add-on store and install the newest version of one addon."""
+    reload_res = supervisor_post("/store/reload", timeout=120)
+    if reload_res.get("result") != "ok":
+        log.warning("Store reload before updating %s failed: %s", slug, reload_res.get("message"))
+    info = supervisor_get(f"/addons/{slug}/info").get("data", {})
+    if info and not info.get("update_available"):
+        return {"result": "ok", "message": "already up to date", "version": info.get("version")}
+    res = supervisor_post(f"/store/addons/{slug}/update", timeout=600, payload={"backup": False})
+    if res.get("result") == "ok":
+        info = supervisor_get(f"/addons/{slug}/info").get("data", {})
+        res["version"] = info.get("version")
+    return res
 
 
 @app.route("/api/addons/<slug>/<action>", methods=["POST"])
 def api_addon_action(slug: str, action: str):
-    """Start, stop or restart an addon via the Supervisor."""
+    """Start, stop, restart or update an addon via the Supervisor."""
     if action not in ADDON_ACTIONS:
         return jsonify(ok=False, error="Unknown action"), 400
     with _cache_lock:
@@ -723,6 +738,17 @@ def api_addon_action(slug: str, action: str):
     entry = known.get(slug)
     if not entry:
         return jsonify(ok=False, error="Unknown addon"), 404
+    if action == "update":
+        log.info("Addon %s: update", slug)
+        res = _update_addon(slug)
+        if res.get("result") != "ok":
+            log.warning("update of %s failed: %s", slug, res.get("message"))
+            return jsonify(ok=False, error=res.get("message") or "update failed"), 502
+        try:
+            refresh_cache()
+        except Exception as e:
+            log.error("Refresh after update failed: %s", e)
+        return jsonify(ok=True, version=res.get("version"), message=res.get("message"))
     running = entry["state"] == "started"
     if action == "start" and running:
         return jsonify(ok=True, alreadyRunning=True)
