@@ -1,5 +1,7 @@
 # Startpanel – Dokumentation
 
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/gregorwolf1973)
+
 ## Übersicht
 
 Startpanel ist ein Home Assistant Addon, das alle installierten Addons auf einer übersichtlichen Dashboard-Seite anzeigt. Laufende Addons erscheinen oben, installierte aber nicht aktive Addons darunter – jeweils mit Icon, Name und Version.
@@ -60,7 +62,18 @@ Der Stift-Button in der Kopfzeile aktiviert den Bearbeitungsmodus (Button leucht
 - **Internal host / IP**: Überschreibt die erkannte Host-IP (z. B. `192.168.178.37` oder `http://homeassistant.local:8123`)
 - **External base URL**: Überschreibt die externe HA-URL (z. B. `https://meine-domain.duckdns.org`)
 
+- **Nginx Proxy Manager**: Benutzername (E-Mail) und Passwort des NPM-Admin-Logins. Das Addon wird automatisch gefunden (Admin-API auf Port 81); eine URL ist nur nötig, wenn NPM woanders läuft. Eine Domain, die auf ein Addon zeigt, wird dessen externe Adresse; eine Domain auf HA selbst (Port 8123) wird die externe Basis für Ingress-Links. Das Passwort wird in `/data/settings.json` gespeichert und nie an den Browser zurückgegeben.
+
 Leere Felder bedeuten „automatisch“. Nach einer Änderung werden alle erkannten Addon-Adressen sofort neu abgeleitet; manuell gesetzte Addon-URLs bleiben unberührt.
+
+## Start / Stop / Restart und Seitenleiste
+
+- Jede Addon-Karte hat eine Aktionsleiste mit **Start**, **Stop** und **Restart**; ein Klick auf ein gestopptes Addon startet es ebenfalls
+- Bei Ingress-Addons blendet der Knopf **Sidebar** das Addon in der HA-Seitenleiste ein oder aus; ein gestopptes Addon verschwindet aus der Seitenleiste und kehrt beim nächsten Start zurück
+
+## Health-Check (⚕)
+
+Prüft alle Addons auf Fehlerzustand, Fehlerzeilen im Log, nicht antwortende Ports und verwaiste Seitenleisten-Einträge. Das Addon-Log lässt sich per Klick anzeigen.
 
 ## Eigene Karten (Custom)
 
