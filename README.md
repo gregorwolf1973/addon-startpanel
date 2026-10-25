@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/gregorwolf1973/addon-startpanel)](https://github.com/gregorwolf1973/addon-startpanel/releases)
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/gregorwolf1973)
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/gregorwolf1973) [![Donate using Liberapay](https://liberapay.com/assets/widgets/donate.svg)](https://liberapay.com/Gregor_Wolf/donate)
 
 A Home Assistant addon that shows all installed addons as a visual dashboard with icons and direct links.
 
