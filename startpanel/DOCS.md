@@ -71,6 +71,13 @@ Leere Felder bedeuten „automatisch“. Nach einer Änderung werden alle erkann
 - Jede Addon-Karte hat eine Aktionsleiste mit **Start**, **Stop** und **Restart**; ein Klick auf ein gestopptes Addon startet es ebenfalls
 - Bei Ingress-Addons blendet der Knopf **Sidebar** das Addon in der HA-Seitenleiste ein oder aus; ein gestopptes Addon verschwindet aus der Seitenleiste und kehrt beim nächsten Start zurück
 
+## Updates, Suche, Verbrauch, Autostart
+
+- **Updates**: Hat ein Addon ein Update, zeigt die Karte `v1.2 → 1.3` und einen Knopf **⬆ Update**; nach einer Rückfrage wird der Store neu geladen und das Addon aktualisiert. **⬆ N** in der Kopfzeile filtert auf alle Addons mit Update
+- **Suche**: Das Suchfeld in der Kopfzeile filtert nach Name oder Slug; `/` springt hinein, Esc leert es
+- **Verbrauch**: Laufende Addons zeigen CPU-Last und Arbeitsspeicher (Tooltip: Anteil am Speicherlimit), aktualisiert mit dem Abgleich alle 60 s
+- **Autostart**: Der Knopf ⏻ schaltet um, ob das Addon mit Home Assistant startet (`boot: auto`) oder nur von Hand (`manual`, orange hervorgehoben)
+
 ## Health-Check (⚕)
 
 Prüft alle Addons auf Fehlerzustand, Fehlerzeilen im Log, nicht antwortende Ports und verwaiste Seitenleisten-Einträge. Das Addon-Log lässt sich per Klick anzeigen.

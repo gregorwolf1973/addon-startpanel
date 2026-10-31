@@ -18,6 +18,11 @@
   <header>
     <h1>Startpanel</h1>
     <div class="controls">
+      <input id="search" class="search" type="search" placeholder="Search addons…  /" aria-label="Search addons" oninput="applyFilter()" />
+      {% set update_count = (running + stopped) | selectattr('update_available') | list | length %}
+      {% if update_count %}
+      <button id="updatesBtn" class="icon-btn updates-btn" onclick="toggleUpdateFilter()" title="Show only addons with an update">&#11014; {{ update_count }}</button>
+      {% endif %}
       <div class="url-toggle">
         <button class="toggle-btn active" data-mode="internal" onclick="setMode('internal')">Internal</button>
         <button class="toggle-btn" data-mode="external" onclick="setMode('external')">External</button>
@@ -44,6 +49,9 @@
              data-ports="{{ addon.ports | tojson | e }}"
              data-state="running"
              data-ingress-panel="{{ 'true' if addon.ingress_panel else 'false' }}"
+             data-update="{{ 'true' if addon.update_available else 'false' }}"
+             data-version-latest="{{ addon.version_latest }}"
+             data-boot="{{ addon.boot }}"
              onclick="cardClick(this)">
           <div class="edit-badge">&#9998;</div>
           <div class="card-icon">
@@ -57,14 +65,22 @@
           </div>
           <div class="card-body">
             <div class="card-name">{{ addon.name }}</div>
-            <div class="card-version">v{{ addon.version }}</div>
+            <div class="card-version">v{{ addon.version }}{% if addon.update_available %} <span class="upd" title="Update available">&rarr; {{ addon.version_latest }}</span>{% endif %}</div>
+            {% if addon.cpu is not none %}<div class="card-stats" title="CPU and memory ({{ addon.mem_pct }} % of the limit)">CPU {{ addon.cpu }} % &middot; {{ (addon.mem / 1048576) | round | int }} MB</div>{% endif %}
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
             <button type="button" class="card-action stop" onclick="addonAction(this, 'stop')" title="Stop addon">&#9632; Stop</button>
             <button type="button" class="card-action restart" onclick="addonAction(this, 'restart')" title="Restart addon">&#8635; Restart</button>
+            {% if addon.update_available %}
+            <button type="button" class="card-action update" onclick="addonAction(this, 'update')" title="Update to {{ addon.version_latest }}">&#11014; Update {{ addon.version_latest }}</button>
+            {% endif %}
             {% if addon.has_ingress %}
             <button type="button" class="card-action sidebar{% if addon.ingress_panel %} on{% endif %}" onclick="toggleSidebar(this)"
                     title="{{ 'Hide from' if addon.ingress_panel else 'Show in' }} Home Assistant sidebar">&#9707; {{ 'In sidebar' if addon.ingress_panel else 'Sidebar' }}</button>
+            {% endif %}
+            {% if addon.boot and addon.boot_config != 'manual_only' %}
+            <button type="button" class="card-action boot{% if addon.boot == 'auto' %} on{% endif %}" onclick="toggleBoot(this)"
+                    title="{{ 'Starts with Home Assistant – click for manual start' if addon.boot == 'auto' else 'Manual start – click to start with Home Assistant' }}">&#9211; {{ 'Autostart' if addon.boot == 'auto' else 'Manual' }}</button>
             {% endif %}
           </div>
         </div>
@@ -125,6 +141,9 @@
              data-ports="{{ addon.ports | tojson | e }}"
              data-state="stopped"
              data-ingress-panel="{{ 'true' if addon.ingress_panel else 'false' }}"
+             data-update="{{ 'true' if addon.update_available else 'false' }}"
+             data-version-latest="{{ addon.version_latest }}"
+             data-boot="{{ addon.boot }}"
              title="Click to start"
              onclick="cardClick(this)">
           <div class="edit-badge">&#9998;</div>
@@ -139,13 +158,21 @@
           </div>
           <div class="card-body">
             <div class="card-name">{{ addon.name }}</div>
-            <div class="card-version">v{{ addon.version }}</div>
+            <div class="card-version">v{{ addon.version }}{% if addon.update_available %} <span class="upd" title="Update available">&rarr; {{ addon.version_latest }}</span>{% endif %}</div>
+            {% if addon.cpu is not none %}<div class="card-stats" title="CPU and memory ({{ addon.mem_pct }} % of the limit)">CPU {{ addon.cpu }} % &middot; {{ (addon.mem / 1048576) | round | int }} MB</div>{% endif %}
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
             <button type="button" class="card-action start" onclick="addonAction(this, 'start')" title="Start addon">&#9654; Start</button>
+            {% if addon.update_available %}
+            <button type="button" class="card-action update" onclick="addonAction(this, 'update')" title="Update to {{ addon.version_latest }}">&#11014; Update {{ addon.version_latest }}</button>
+            {% endif %}
             {% if addon.has_ingress %}
             <button type="button" class="card-action sidebar{% if addon.ingress_panel %} on{% endif %}" onclick="toggleSidebar(this)"
                     title="{{ 'Hide from' if addon.ingress_panel else 'Show in' }} Home Assistant sidebar">&#9707; {{ 'In sidebar' if addon.ingress_panel else 'Sidebar' }}</button>
+            {% endif %}
+            {% if addon.boot and addon.boot_config != 'manual_only' %}
+            <button type="button" class="card-action boot{% if addon.boot == 'auto' %} on{% endif %}" onclick="toggleBoot(this)"
+                    title="{{ 'Starts with Home Assistant – click for manual start' if addon.boot == 'auto' else 'Manual start – click to start with Home Assistant' }}">&#9211; {{ 'Autostart' if addon.boot == 'auto' else 'Manual' }}</button>
             {% endif %}
           </div>
         </div>
@@ -513,6 +540,7 @@
       start: ['Starting', 'started'],
       stop: ['Stopping', 'stopped'],
       restart: ['Restarting', 'restarted'],
+      update: ['Updating', 'updated'],
     };
     function addonAction(el, action) {
       var card = el.closest('.card');
@@ -520,6 +548,7 @@
       var slug = card.dataset.slug;
       var name = card.querySelector('.card-name').textContent;
       var txt = ACTION_TEXT[action];
+      if (action === 'update' && !confirm('Update ' + name + ' to ' + card.dataset.versionLatest + '?\nThe addon restarts; this can take a few minutes.')) return;
       card.classList.add('busy');
       showToast(txt[0] + ' ' + name + '…');
       fetch('api/addons/' + encodeURIComponent(slug) + '/' + action, { method: 'POST' })
@@ -528,7 +557,7 @@
           if (data && data.ok) {
             var extra = data.sidebar === false ? ' Removed from the sidebar.'
                       : data.sidebar === true ? ' Back in the sidebar.' : '';
-            showToast(name + ' ' + txt[1] + '.' + extra);
+            showToast(name + ' ' + txt[1] + (data.version ? ' to ' + data.version : '') + '.' + extra + (data.message ? ' (' + data.message + ')' : ''));
             setTimeout(function() { window.location.reload(); }, 1200);
           } else {
             card.classList.remove('busy');
@@ -576,6 +605,75 @@
           showToast('Sidebar toggle failed.');
         });
     }
+
+    // Autostart (Supervisor option boot): start with Home Assistant or only by hand
+    function toggleBoot(btn) {
+      var card = btn.closest('.card');
+      if (!card || card.classList.contains('busy')) return;
+      var name = card.querySelector('.card-name').textContent;
+      var auto = card.dataset.boot !== 'auto';
+      card.classList.add('busy');
+      fetch('api/addons/' + encodeURIComponent(card.dataset.slug) + '/boot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto: auto }),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          card.classList.remove('busy');
+          if (data && data.ok) {
+            card.dataset.boot = auto ? 'auto' : 'manual';
+            btn.classList.toggle('on', auto);
+            btn.innerHTML = '&#9211; ' + (auto ? 'Autostart' : 'Manual');
+            btn.title = auto ? 'Starts with Home Assistant – click for manual start' : 'Manual start – click to start with Home Assistant';
+            showToast(name + (auto ? ' now starts with Home Assistant.' : ' now starts only by hand.'));
+          } else {
+            showToast('Autostart change failed: ' + ((data && data.error) || 'unknown error'));
+          }
+        })
+        .catch(function() { card.classList.remove('busy'); showToast('Autostart change failed.'); });
+    }
+
+    // Search and "updates only" filter (cards stay in place, non-matching ones are hidden)
+    var onlyUpdates = false;
+    function applyFilter() {
+      var q = (document.getElementById('search').value || '').trim().toLowerCase();
+      document.querySelectorAll('#main .card:not(.add-card)').forEach(function(card) {
+        var name = (card.querySelector('.card-name') || {}).textContent || '';
+        var hit = !q || name.toLowerCase().indexOf(q) >= 0 || (card.dataset.slug || '').toLowerCase().indexOf(q) >= 0;
+        if (onlyUpdates && card.dataset.update !== 'true') hit = false;
+        card.classList.toggle('filtered-out', !hit);
+      });
+      document.querySelectorAll('#main section').forEach(function(sec) {
+        var any = sec.querySelector('.card:not(.add-card):not(.filtered-out)');
+        sec.classList.toggle('filtered-empty', (q || onlyUpdates) && !any);
+      });
+      try { sessionStorage.setItem('startpanel-filter', JSON.stringify({ q: q, onlyUpdates: onlyUpdates })); } catch (e) {}
+    }
+    function toggleUpdateFilter() {
+      onlyUpdates = !onlyUpdates;
+      var b = document.getElementById('updatesBtn');
+      if (b) b.classList.toggle('active', onlyUpdates);
+      applyFilter();
+    }
+    // gemerkter Filter (überlebt das automatische Neuladen der Seite)
+    document.addEventListener('DOMContentLoaded', function() {
+      try {
+        var f = JSON.parse(sessionStorage.getItem('startpanel-filter') || '{}');
+        if (f.q) document.getElementById('search').value = f.q;
+        if (f.onlyUpdates && document.getElementById('updatesBtn')) { onlyUpdates = true; document.getElementById('updatesBtn').classList.add('active'); }
+      } catch (e) {}
+      applyFilter();
+    });
+    document.addEventListener('keydown', function(e) {
+      var s = document.getElementById('search');
+      if (e.ctrlKey || e.metaKey || e.altKey || anyModalOpen()) return;
+      if (e.key === '/' && document.activeElement !== s && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) {
+        e.preventDefault(); s.focus();
+      } else if (e.key === 'Escape' && document.activeElement === s) {
+        s.value = ''; s.blur(); applyFilter();
+      }
+    });
 
     function buildIngressUrl(card) {
       if (card.dataset.hasIngress !== 'true') return null;
@@ -1096,17 +1194,23 @@
     var POLL_INTERVAL = 30000;
 
     function anyModalOpen() {
-      return ['modalOverlay', 'customModalOverlay', 'settingsOverlay'].some(function(id) {
-        return !document.getElementById(id).classList.contains('hidden');
+      return ['modalOverlay', 'customModalOverlay', 'settingsOverlay', 'healthOverlay'].some(function(id) {
+        var el = document.getElementById(id);
+        return el && !el.classList.contains('hidden');
       });
     }
 
     function snapshotKey(list) {
-      return list.map(function(e) { return e.slug + ':' + e.state; }).sort().join('|');
+      return list.map(function(e) { return e.slug + ':' + e.state + (e.update ? ':u' : ''); }).sort().join('|');
     }
 
+    // nicht neu laden, solange eine Aktion läuft (Update dauert Minuten) oder im Suchfeld gearbeitet wird
+    function reloadBlockiert() {
+      var s = document.getElementById('search');
+      return anyModalOpen() || editMode || document.querySelector('.card.busy') || (s && (document.activeElement === s || s.value));
+    }
     function pollAddons() {
-      if (document.hidden || anyModalOpen() || editMode) return;
+      if (document.hidden || reloadBlockiert()) return;
       fetch('api/addons')
         .then(function(r) { return r.json(); })
         .then(function(data) {
@@ -1125,7 +1229,7 @@
                   : 'Addon status changed – updating…';
           showToast(msg);
           _renderedSnapshot = snap;
-          setTimeout(function() { if (!anyModalOpen() && !editMode) window.location.reload(); }, 1500);
+          setTimeout(function() { if (!reloadBlockiert()) window.location.reload(); }, 1500);
         })
         .catch(function() {});
     }

@@ -439,16 +439,34 @@ def sync_detected(running: list, stopped: list, settings: dict | None = None) ->
 
 
 # ── Addon list ────────────────────────────────────────────────────
+def _addon_details(a: dict) -> tuple[dict, dict]:
+    """Info and (for running addons) resource stats of one addon – fetched in parallel for all addons."""
+    slug = a.get("slug", "")
+    detail = supervisor_get(f"/addons/{slug}/info").get("data") or {}
+    stats = (supervisor_get(f"/addons/{slug}/stats").get("data") or {}) if a.get("state") == "started" else {}
+    return detail, stats
+
+
 def build_addon_list() -> tuple[list, list]:
     raw = supervisor_get("/addons")
     addons_raw = raw.get("data", {}).get("addons", [])
 
     running, stopped = [], []
+    # One info (+ stats) request per addon: in parallel, otherwise the page waits for dozens of round trips
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        details = list(pool.map(_addon_details, addons_raw))
 
-    for a in addons_raw:
+    with _cache_lock:
+        frueher = {e["slug"]: e for e in _cache["running"] + _cache["stopped"]}
+    for a, (detail, stats) in zip(addons_raw, details):
         slug = a.get("slug", "")
         state = a.get("state", "unknown")
-        detail = supervisor_get(f"/addons/{slug}/info").get("data", {})
+        if not detail and slug in frueher:
+            # Info kurz nicht abrufbar: den letzten bekannten Eintrag behalten (Zustand und Version aus der Liste),
+            # sonst flackern Ingress, Ports und Autostart der Kachel
+            alt = dict(frueher[slug], state=state, version=a.get("version", frueher[slug]["version"]))
+            (running if state == "started" else stopped).append(alt)
+            continue
         # The /addons list carries no ingress flag – only the per-addon info does
         has_ingress = bool(detail.get("ingress", a.get("ingress")))
         network_raw = detail.get("network") or {}
@@ -468,10 +486,20 @@ def build_addon_list() -> tuple[list, list]:
             except (ValueError, AttributeError):
                 pass
 
+        version = a.get("version", "") or detail.get("version", "")
+        latest = a.get("version_latest") or detail.get("version_latest") or ""
+        update = bool(a.get("update_available", detail.get("update_available"))) and latest != version
         entry = {
             "slug": slug,
             "name": a.get("name", slug),
-            "version": a.get("version", ""),
+            "version": version,
+            "version_latest": latest,
+            "update_available": update,
+            "boot": detail.get("boot", ""),
+            "boot_config": detail.get("boot_config", ""),
+            "cpu": round(float(stats.get("cpu_percent") or 0), 1) if stats else None,
+            "mem": int(stats.get("memory_usage") or 0) if stats else None,
+            "mem_pct": round(float(stats.get("memory_percent") or 0), 1) if stats else None,
             "state": state,
             "has_ingress": has_ingress,
             "ingress_panel": ingress_panel,
@@ -505,11 +533,27 @@ def _addon_has_icon(slug: str) -> bool:
 
 
 def _snapshot(running: list, stopped: list) -> list:
-    return [{"slug": e["slug"], "name": e["name"], "state": e["state"]} for e in running + stopped]
+    return [{"slug": e["slug"], "name": e["name"], "state": e["state"], "update": e.get("update_available", False)}
+            for e in running + stopped]
 
 
-def refresh_cache() -> list:
-    """Poll the supervisor, sync detected addresses and update the cache. Returns new slugs."""
+_refresh_lock = threading.Lock()
+
+
+def refresh_cache(warten: bool = True) -> list:
+    """Poll the supervisor, sync detected addresses and update the cache. Returns new slugs.
+
+    Only one refresh runs at a time; with warten=False a request that finds one running just uses the cache.
+    """
+    if not _refresh_lock.acquire(blocking=warten):
+        return []
+    try:
+        return _refresh()
+    finally:
+        _refresh_lock.release()
+
+
+def _refresh() -> list:
     running, stopped = build_addon_list()
     if not running and not stopped:
         # Supervisor unreachable – keep the last good list
@@ -522,12 +566,14 @@ def refresh_cache() -> list:
     return new_slugs
 
 
-def get_cached(max_age: float = REFRESH_INTERVAL) -> dict:
+def get_cached(max_age: float = REFRESH_INTERVAL * 2) -> dict:
+    # the background poller keeps the cache fresh; requests only refresh if it is clearly stale (or empty)
     with _cache_lock:
-        stale = (time.time() - _cache["ts"]) > max_age or not _cache["snapshot"]
+        leer = not _cache["snapshot"]
+        stale = (time.time() - _cache["ts"]) > max_age or leer
     if stale:
         try:
-            refresh_cache()
+            refresh_cache(warten=leer)
         except Exception as e:
             log.error("Refresh failed: %s", e)
     with _cache_lock:
@@ -704,6 +750,28 @@ def api_addon_sidebar(slug: str):
     return jsonify(ok=True, show=show, diag=sidebar_diag(slug))
 
 
+@app.route("/api/addons/<slug>/boot", methods=["POST"])
+def api_addon_boot(slug: str):
+    """Switch an addon's autostart (Supervisor option boot: auto / manual)."""
+    body = request.get_json(silent=True) or {}
+    if "auto" not in body:
+        return jsonify(ok=False, error="Missing 'auto'"), 400
+    auto = bool(body.get("auto"))
+    with _cache_lock:
+        known = {e["slug"] for e in _cache["running"] + _cache["stopped"]}
+    if slug not in known:
+        return jsonify(ok=False, error="Unknown addon"), 404
+    res = supervisor_post(f"/addons/{slug}/options", timeout=30, payload={"boot": "auto" if auto else "manual"})
+    log.info("Addon %s: boot %s -> %s", slug, "auto" if auto else "manual", res)
+    if res.get("result") != "ok":
+        return jsonify(ok=False, error=res.get("message") or "Could not change autostart"), 502
+    try:
+        refresh_cache()
+    except Exception as e:
+        log.error("Refresh after boot change failed: %s", e)
+    return jsonify(ok=True, auto=auto)
+
+
 @app.route("/api/addons/<slug>/diag")
 def api_addon_diag(slug: str):
     """Troubleshooting view: addon info + the ingress panel list HA reads from the Supervisor."""
@@ -855,7 +923,7 @@ def check_addon(entry: dict, hosts: dict, settings: dict, lines: int) -> dict:
 @app.route("/api/health")
 def api_health():
     """Check every addon: state, recent log errors, port reachability, sidebar consistency."""
-    lines = max(20, min(int(request.args.get("lines", 200)), 1000))
+    lines = max(20, min(request.args.get("lines", 200, type=int) or 200, 1000))
     data = get_cached()
     settings = load_settings()
     hosts = effective_hosts(settings)
@@ -878,7 +946,7 @@ def api_health():
 @app.route("/api/addons/<slug>/logs")
 def api_addon_logs(slug: str):
     """Plain-text log of an addon (latest start)."""
-    lines = max(20, min(int(request.args.get("lines", 500)), 5000))
+    lines = max(20, min(request.args.get("lines", 500, type=int) or 500, 5000))
     text = addon_logs(slug, lines)
     if not text:
         return Response("No log available for this addon.\n", mimetype="text/plain", status=404)

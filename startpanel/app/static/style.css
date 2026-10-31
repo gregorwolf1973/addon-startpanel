@@ -251,7 +251,19 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 .card-action.start:hover { color: var(--green); border-color: var(--green); }
 .card-action.stop:hover { color: var(--red); border-color: var(--red); }
 .card-action.restart:hover { color: var(--accent); border-color: var(--accent); }
-.card-action.sidebar { flex-basis: 100%; }
+.card-action.sidebar, .card-action.boot { flex-basis: 40%; }
+/* Autostart ist der Normalfall (unauffällig), manueller Start die Ausnahme (hervorgehoben) */
+.card-action.boot:not(.on) { color: var(--orange, #e8a33d); border-color: var(--orange, #e8a33d); }
+.card-action.update { flex-basis: 100%; color: #fff; background: var(--orange, #e8a33d); border-color: var(--orange, #e8a33d); }
+.card-action.update:hover { opacity: 0.85; color: #fff; }
+.card .upd { color: var(--orange, #e8a33d); font-weight: 600; }
+.card-stats { font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.search { width: 190px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 0.8rem; }
+.search:focus { outline: none; border-color: var(--accent); }
+.updates-btn { width: auto; padding: 0 10px; color: var(--orange, #e8a33d); border-color: var(--orange, #e8a33d); }
+.updates-btn.active { color: #fff; background: var(--orange, #e8a33d); }
+.card.filtered-out, section.filtered-empty { display: none; }
+@media (max-width: 700px) { .search { width: 120px; } }
 .card-action.sidebar.on { color: #fff; background: var(--accent); border-color: var(--accent); }
 .card-action.sidebar.on:hover { opacity: 0.85; }
 body.edit-mode .card-actions { display: none; }
