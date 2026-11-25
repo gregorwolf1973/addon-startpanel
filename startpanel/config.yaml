@@ -1,6 +1,7 @@
 name: "Startpanel"
 description: "Dashboard showing all Home Assistant addons with icons and quick access links"
-version: "0.35"
+version: "0.36"
+image: ghcr.io/gregorwolf1973/{arch}-addon-startpanel
 url: "https://github.com/gregorwolf1973/addon-startpanel"
 slug: "startpanel"
 init: false
